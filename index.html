@@ -61,9 +61,11 @@ const video = document.getElementById("video");
 let stream = null;
 let scanning = true;
 
-const TIMEOUT = 120000; // 2 minutos
+const TIMEOUT = 120000;
 
 let timeoutHandle;
+
+
 
 async function iniciarScanner(){
 
@@ -81,7 +83,11 @@ iniciarFallback();
 
 }
 
+
+
 async function iniciarBarcodeDetector(){
+
+try{
 
 stream = await navigator.mediaDevices.getUserMedia({
 video:{
@@ -103,6 +109,8 @@ setInterval(async ()=>{
 
 if(!scanning) return;
 
+try{
+
 const barcodes = await detector.detect(video);
 
 if(barcodes.length>0){
@@ -111,9 +119,21 @@ processarResultado(barcodes[0].rawValue);
 
 }
 
+}catch(err){}
+
 },250);
 
+}catch(err){
+
+console.error("Erro ao acessar câmera:",err);
+
+iniciarFallback();
+
 }
+
+}
+
+
 
 function iniciarFallback(){
 
@@ -134,6 +154,8 @@ processarResultado(qr);
 
 }
 
+
+
 function processarResultado(qr){
 
 if(!scanning) return;
@@ -150,6 +172,8 @@ enviarResultado(qr);
 
 }
 
+
+
 function pararCamera(){
 
 clearTimeout(timeoutHandle);
@@ -160,21 +184,33 @@ stream.getTracks().forEach(track=>track.stop());
 
 }
 
+
+
 function encerrarScanner(){
 
 scanning=false;
 
 pararCamera();
 
-window.parent.postMessage({
+if(window.opener && !window.opener.closed){
+
+window.opener.postMessage({
 type:"QR_TIMEOUT"
 },"*");
 
 }
 
+window.close();
+
+}
+
+
+
 function enviarResultado(qr){
 
-window.parent.postMessage({
+if(window.opener && !window.opener.closed){
+
+window.opener.postMessage({
 type:"QR_RESULT",
 qr:qr,
 device:navigator.userAgent,
@@ -182,6 +218,12 @@ time:new Date().toISOString()
 },"*");
 
 }
+
+window.close();
+
+}
+
+
 
 iniciarScanner();
 
