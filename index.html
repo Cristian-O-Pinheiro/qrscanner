@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>QR Scanner</title>
+
+<script src="https://unpkg.com/html5-qrcode"></script>
+
+<style>
+
+body{
+margin:0;
+font-family:Arial;
+background:black;
+}
+
+#video{
+width:100%;
+}
+
+#overlay{
+position:absolute;
+top:0;
+left:0;
+width:100%;
+height:100%;
+display:flex;
+justify-content:center;
+align-items:center;
+pointer-events:none;
+}
+
+#frame{
+width:250px;
+height:250px;
+border:4px solid white;
+border-radius:12px;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<video id="video"></video>
+
+<div id="overlay">
+<div id="frame"></div>
+</div>
+
+<div id="reader" style="display:none"></div>
+
+<script>
+
+const video = document.getElementById("video");
+
+let stream = null;
+let scanning = true;
+
+const TIMEOUT = 120000; // 2 minutos
+
+let timeoutHandle;
+
+async function iniciarScanner(){
+
+timeoutHandle = setTimeout(encerrarScanner, TIMEOUT);
+
+if ('BarcodeDetector' in window){
+
+iniciarBarcodeDetector();
+
+}else{
+
+iniciarFallback();
+
+}
+
+}
+
+async function iniciarBarcodeDetector(){
+
+stream = await navigator.mediaDevices.getUserMedia({
+video:{
+facingMode:{ideal:"environment"},
+width:{ideal:1280},
+height:{ideal:720}
+}
+});
+
+video.srcObject = stream;
+
+await video.play();
+
+const detector = new BarcodeDetector({
+formats:["qr_code"]
+});
+
+setInterval(async ()=>{
+
+if(!scanning) return;
+
+const barcodes = await detector.detect(video);
+
+if(barcodes.length>0){
+
+processarResultado(barcodes[0].rawValue);
+
+}
+
+},250);
+
+}
+
+function iniciarFallback(){
+
+document.getElementById("video").style.display="none";
+document.getElementById("overlay").style.display="none";
+
+const html5Qr = new Html5Qrcode("reader");
+
+document.getElementById("reader").style.display="block";
+
+html5Qr.start(
+{ facingMode:"environment" },
+{ fps:10, qrbox:250 },
+(qr)=>{
+processarResultado(qr);
+}
+);
+
+}
+
+function processarResultado(qr){
+
+if(!scanning) return;
+
+scanning=false;
+
+if(navigator.vibrate){
+navigator.vibrate(200);
+}
+
+pararCamera();
+
+enviarResultado(qr);
+
+}
+
+function pararCamera(){
+
+clearTimeout(timeoutHandle);
+
+if(stream){
+stream.getTracks().forEach(track=>track.stop());
+}
+
+}
+
+function encerrarScanner(){
+
+scanning=false;
+
+pararCamera();
+
+window.parent.postMessage({
+type:"QR_TIMEOUT"
+},"*");
+
+}
+
+function enviarResultado(qr){
+
+window.parent.postMessage({
+type:"QR_RESULT",
+qr:qr,
+device:navigator.userAgent,
+time:new Date().toISOString()
+},"*");
+
+}
+
+iniciarScanner();
+
+</script>
+
+</body>
+
+</html>
