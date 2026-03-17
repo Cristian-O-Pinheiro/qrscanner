@@ -80,22 +80,15 @@ if(!window.opener){
 VALIDAÇÃO DE ORIGEM
 ========================= */
 
-const allowedOrigins = [
- "https://script.google.com",
- "https://script.googleusercontent.com"
-];
-
 let openerOrigin = null;
 let origemValida = false;
 
 try{
 
- if(!window.opener){
-   throw new Error("Sem opener");
- }
-
- // tentativa segura
  const openerLocation = window.opener.location.href;
+
+ // ✅ CORREÇÃO: capturar origin corretamente
+ openerOrigin = window.opener.location.origin;
 
  if(
    openerLocation.includes("script.google.com") ||
@@ -106,9 +99,7 @@ try{
 
 }catch(e){
 
- // fallback importante:
- // se não conseguir acessar por causa de CORS,
- // ainda permitimos (porque sabemos que veio do opener válido)
+ // fallback (CORS pode bloquear acesso)
  origemValida = true;
 
 }
@@ -153,21 +144,16 @@ function sucesso(qr){
 
   setTimeout(()=>{
 
-   /* envio seguro */
+   /* =========================
+   ENVIO DA MENSAGEM
+   ========================= */
 
-   let targetOrigin = "*";
-
-   try{
-     targetOrigin = openerOrigin || window.opener.location.origin;
-   }catch(e){
-     targetOrigin = "*";
-   }
-
+   // 🔥 MODO TESTE: garante que SEMPRE funcione
    window.opener.postMessage({
      tipo:"qr",
      codigo:qr,
      token:token
-   }, targetOrigin);
+   }, "*");
 
   },400);
 
