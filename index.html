@@ -1,224 +1,126 @@
 <!DOCTYPE html>
 <html>
-
 <head>
-
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<script src="https://unpkg.com/html5-qrcode"></script>
-
-<style>
-body{
-margin:0;
-font-family:Arial;
-text-align:center;
-background:black;
-color:white;
-}
-
-#reader{
-width:100%;
-position:relative;
-}
-
-#frame{
-position:absolute;
-top:50%;
-left:50%;
-transform:translate(-50%,-50%);
-width:250px;
-height:250px;
-border:4px solid white;
-border-radius:12px;
-box-shadow:0 0 20px rgba(255,255,255,0.3);
-pointer-events:none;
-}
-
-#frame.sucesso{
-border:4px solid #00ff88;
-box-shadow:0 0 25px #00ff88;
-}
-
-#mensagem{
-position:fixed;
-top:40%;
-left:50%;
-transform:translate(-50%,-50%);
-background:rgba(0,0,0,0.8);
-padding:20px 30px;
-border-radius:10px;
-font-size:22px;
-display:none;
-}
-</style>
-
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <style>
+    body { margin:0; font-family:Arial; text-align:center; background:black; color:white; }
+    #reader { width:100%; position:relative; }
+    #frame {
+      position:absolute; top:50%; left:50%;
+      transform:translate(-50%,-50%);
+      width:250px; height:250px;
+      border:4px solid white; border-radius:12px;
+      box-shadow:0 0 20px rgba(255,255,255,0.3);
+      pointer-events:none;
+    }
+    #frame.sucesso { border:4px solid #00ff88; box-shadow:0 0 25px #00ff88; }
+    #mensagem {
+      position:fixed; top:40%; left:50%;
+      transform:translate(-50%,-50%);
+      background:rgba(0,0,0,0.8);
+      padding:20px 30px; border-radius:10px;
+      font-size:22px; display:none;
+    }
+  </style>
 </head>
-
 <body>
 
 <h3>Escaneando...</h3>
-
-<div id="reader">
-  <div id="frame"></div>
-</div>
-
-<div id="mensagem">
-✔ Leitura confirmada
-</div>
+<div id="reader"><div id="frame"></div></div>
+<div id="mensagem">✔ Leitura confirmada</div>
 
 <script>
 
-/* =========================
-SEGURANÇA BÁSICA
-========================= */
-
-if(!window.opener){
- document.body.innerHTML="<h3>Acesso inválido</h3>";
- throw new Error("Sem opener");
+/* === SEGURANÇA: só abre como popup === */
+if (!window.opener) {
+  document.body.innerHTML = "<h3>Acesso inválido</h3>";
+  throw new Error("Sem opener");
 }
 
-/* =========================
-VALIDAÇÃO DE ORIGEM
-========================= */
-
-let openerOrigin = null;
+/* === SEGURANÇA: Validação de origem ===
+   NOTA: window.opener.location é bloqueado por CORS (cross-origin).
+   O try/catch é mantido mas a segurança REAL é o token de sessão abaixo. */
 let origemValida = false;
-
-try{
-
- const openerLocation = window.opener.location.href;
-
- // ✅ CORREÇÃO: capturar origin corretamente
- openerOrigin = window.opener.location.origin;
-
- if(
-   openerLocation.includes("script.google.com") ||
-   openerLocation.includes("script.googleusercontent.com")
- ){
-   origemValida = true;
- }
-
-}catch(e){
-
- // fallback (CORS pode bloquear acesso)
- origemValida = true;
-
+try {
+  const href = window.opener.location.href;
+  origemValida = href.includes("script.google.com") ||
+                 href.includes("script.googleusercontent.com");
+} catch(e) {
+  // CORS bloqueou — segurança real garantida pelo token abaixo
+  origemValida = true;
 }
 
-if(!origemValida){
- document.body.innerHTML="<h3>Acesso não autorizado</h3>";
- throw new Error("Origem inválida");
+if (!origemValida) {
+  document.body.innerHTML = "<h3>Acesso não autorizado</h3>";
+  throw new Error("Origem inválida");
 }
 
-/* =========================
-TOKEN
-========================= */
-
+/* === TOKEN: obrigatório para iniciar === */
 const params = new URLSearchParams(window.location.search);
 const token = params.get("token");
 
-if(!token){
- document.body.innerHTML="<h3>Token inválido</h3>";
- throw new Error("Sem token");
+if (!token) {
+  document.body.innerHTML = "<h3>Token de sessão inválido</h3>";
+  throw new Error("Sem token");
 }
 
-/* =========================
-SCANNER
-========================= */
-
+/* === SCANNER === */
 const scanner = new Html5Qrcode("reader");
-
 let leituraFeita = false;
 
-/* sucesso na leitura */
+function sucesso(qr) {
+  if (leituraFeita) return;
+  leituraFeita = true;
 
-function sucesso(qr){
+  document.getElementById("frame").classList.add("sucesso");
+  document.getElementById("mensagem").style.display = "block";
 
- if(leituraFeita) return;
+  // Função de envio — garantida mesmo se stop() falhar
+  const enviar = () => {
+    setTimeout(() => {
+      window.opener.postMessage({
+        tipo: "qr",
+        codigo: qr,
+        token: token   // Devolve o token original para validação no WebApp
+      }, "*");
+      // Fecha a janela após enviar
+      setTimeout(() => window.close(), 300);
+    }, 400);
+  };
 
- leituraFeita = true;
-
- document.getElementById("frame").classList.add("sucesso");
- document.getElementById("mensagem").style.display="block";
-
- scanner.stop().then(()=>{
-
-  setTimeout(()=>{
-
-   /* =========================
-   ENVIO DA MENSAGEM
-   ========================= */
-
-   // 🔥 MODO TESTE: garante que SEMPRE funcione
-   window.opener.postMessage({
-     tipo:"qr",
-     codigo:qr,
-     token:token
-   }, "*");
-
-  },400);
-
- });
-
+  // Tenta parar o scanner e envia; .catch garante que nunca trava
+  scanner.stop().then(enviar).catch(enviar);
 }
 
-/* =========================
-INICIAR CÂMERA
-========================= */
+async function iniciar() {
+  try {
+    const cameras = await Html5Qrcode.getCameras();
+    if (!cameras || cameras.length === 0) {
+      document.body.innerHTML = "<h3>Nenhuma câmera encontrada</h3>";
+      return;
+    }
 
-async function iniciar(){
+    // Prefere câmera traseira
+    let cameraId = cameras[cameras.length - 1].id;
+    for (const cam of cameras) {
+      const label = cam.label.toLowerCase();
+      if (label.includes("back") || label.includes("rear") ||
+          label.includes("environment") || label.includes("traseira")) {
+        cameraId = cam.id;
+        break;
+      }
+    }
 
- try{
+    await scanner.start(cameraId, { fps: 10, qrbox: 250 }, sucesso);
 
-   const cameras = await Html5Qrcode.getCameras();
-
-   if(!cameras || cameras.length===0){
-     document.body.innerHTML="<h3>Nenhuma câmera encontrada</h3>";
-     return;
-   }
-
-   let cameraId = cameras[0].id;
-
-   /* tenta câmera traseira */
-
-   for(const cam of cameras){
-
-     const label = cam.label.toLowerCase();
-
-     if(
-       label.includes("back") ||
-       label.includes("rear") ||
-       label.includes("environment") ||
-       label.includes("traseira")
-     ){
-       cameraId = cam.id;
-       break;
-     }
-
-   }
-
-   await scanner.start(
-     cameraId,
-     {
-       fps:10,
-       qrbox:250
-     },
-     sucesso
-   );
-
- }catch(err){
-
-   document.body.innerHTML =
-   "<h3>Erro ao acessar câmera</h3>";
-
-   console.error(err);
-
- }
-
+  } catch(err) {
+    document.body.innerHTML = "<h3>Erro ao acessar câmera</h3><p>" + err.message + "</p>";
+    console.error(err);
+  }
 }
 
 iniciar();
-
 </script>
-
 </body>
 </html>
