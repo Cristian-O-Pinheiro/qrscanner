@@ -3,6 +3,7 @@
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://unpkg.com/html5-qrcode"></script>
+
   <style>
     body { margin:0; font-family:Arial; text-align:center; background:black; color:white; }
     #reader { width:100%; position:relative; }
@@ -26,43 +27,58 @@
 </head>
 <body>
 
-<h3>Escaneando...</h3>
-<div id="reader"><div id="frame"></div></div>
+<h3 id="status">Validando acesso...</h3>
+<div id="reader" style="display:none;"><div id="frame"></div></div>
 <div id="mensagem">✔ Leitura confirmada</div>
 
 <script>
 
-/* === SEGURANÇA: só abre como popup === */
+/* === CONFIG === */
+// TODO: Cole a URL de Produção que você gerar no Deploy.
+const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbz3mSh-XNXQVG4Qth5Q_X4J2DRG-jPq4BI-iLubUWyIxDLiDTDRUGmLF116YijnkXO2/exec";
+
+/* === BLOQUEIO: precisa ser popup === */
 if (!window.opener) {
   document.body.innerHTML = "<h3>Acesso inválido</h3>";
   throw new Error("Sem opener");
 }
 
-/* === SEGURANÇA: Validação de origem ===
-   NOTA: window.opener.location é bloqueado por CORS (cross-origin).
-   O try/catch é mantido mas a segurança REAL é o token de sessão abaixo. */
-let origemValida = false;
-try {
-  const href = window.opener.location.href;
-  origemValida = href.includes("script.google.com") ||
-                 href.includes("script.googleusercontent.com");
-} catch(e) {
-  // CORS bloqueou — segurança real garantida pelo token abaixo
-  origemValida = true;
-}
-
-if (!origemValida) {
-  document.body.innerHTML = "<h3>Acesso não autorizado</h3>";
-  throw new Error("Origem inválida");
-}
-
-/* === TOKEN: obrigatório para iniciar === */
+/* === PARAMETROS (TOKEN E ORIGEM) === */
 const params = new URLSearchParams(window.location.search);
 const token = params.get("token");
 
+// Recebemos a origem dinamicamente enviada pelo WebApp para garantir segurança CORS correta no postMessage!
+const paramOrigem = params.get("origem");
+const origemWebApp = paramOrigem ? decodeURIComponent(paramOrigem) : "*";
+
 if (!token) {
-  document.body.innerHTML = "<h3>Token de sessão inválido</h3>";
+  document.body.innerHTML = "<h3>Token inválido</h3>";
   throw new Error("Sem token");
+}
+
+/* === VALIDAR TOKEN NO BACKEND === */
+async function validarToken() {
+  try {
+    const res = await fetch(`${WEBAPP_URL}?action=validar&token=${token}`);
+    const data = await res.json();
+
+    if (!data.valido) {
+      mostrarErro(data.erro || "Token inválido");
+      return false;
+    }
+
+    return true;
+
+  } catch (err) {
+    mostrarErro("Erro de comunicação com o servidor.");
+    return false;
+  }
+}
+
+/* === ERRO COM FECHAMENTO === */
+function mostrarErro(msg) {
+  document.getElementById("status").innerText = msg;
+  setTimeout(() => window.close(), 2500);
 }
 
 /* === SCANNER === */
@@ -76,33 +92,37 @@ function sucesso(qr) {
   document.getElementById("frame").classList.add("sucesso");
   document.getElementById("mensagem").style.display = "block";
 
-  // Função de envio — garantida mesmo se stop() falhar
   const enviar = () => {
     setTimeout(() => {
+      // Usando a origemWebApp ao invés de fixo para passar pela barreira do Iframe Sandboxing
       window.opener.postMessage({
         tipo: "qr",
         codigo: qr,
-        token: token   // Devolve o token original para validação no WebApp
-      }, "*");
-      // Fecha a janela após enviar
+        token: token
+      }, origemWebApp);
+
       setTimeout(() => window.close(), 300);
     }, 400);
   };
 
-  // Tenta parar o scanner e envia; .catch garante que nunca trava
+  // Garante o fechamento mesmo em erro do scanner
   scanner.stop().then(enviar).catch(enviar);
 }
 
-async function iniciar() {
+/* === INICIAR CÂMERA === */
+async function iniciarCamera() {
   try {
+    document.getElementById("status").innerText = "Escaneando...";
+    document.getElementById("reader").style.display = "block";
+
     const cameras = await Html5Qrcode.getCameras();
     if (!cameras || cameras.length === 0) {
-      document.body.innerHTML = "<h3>Nenhuma câmera encontrada</h3>";
+      mostrarErro("Nenhuma câmera encontrada");
       return;
     }
 
-    // Prefere câmera traseira
     let cameraId = cameras[cameras.length - 1].id;
+
     for (const cam of cameras) {
       const label = cam.label.toLowerCase();
       if (label.includes("back") || label.includes("rear") ||
@@ -114,13 +134,19 @@ async function iniciar() {
 
     await scanner.start(cameraId, { fps: 10, qrbox: 250 }, sucesso);
 
-  } catch(err) {
-    document.body.innerHTML = "<h3>Erro ao acessar câmera</h3><p>" + err.message + "</p>";
+  } catch (err) {
+    mostrarErro("Erro ao acessar câmera: " + err.message);
     console.error(err);
   }
 }
 
-iniciar();
+/* === FLUXO PRINCIPAL === */
+(async () => {
+  const valido = await validarToken();
+  if (!valido) return;
+  iniciarCamera();
+})();
+
 </script>
 </body>
 </html>
