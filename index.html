@@ -22,47 +22,8 @@
       background:rgba(0,0,0,0.8);
       padding:20px 30px; border-radius:10px;
       font-size:22px; display:none;
-      z-index: 1000;
     }
     #status { padding: 10px; }
-    #debug-panel {
-      position: fixed;
-      bottom: 50px;
-      left: 10px;
-      right: 10px;
-      background: rgba(0,0,0,0.9);
-      color: #0f0;
-      font-family: monospace;
-      font-size: 10px;
-      padding: 5px;
-      max-height: 200px;
-      overflow-y: auto;
-      text-align: left;
-      z-index: 1001;
-      display: none;
-      border: 1px solid #0f0;
-      border-radius: 5px;
-    }
-    .debug-visible #debug-panel {
-      display: block;
-    }
-    #toggle-debug {
-      position: fixed;
-      bottom: 10px;
-      right: 10px;
-      z-index: 1002;
-      background: #333;
-      color: white;
-      border: 1px solid #666;
-      padding: 8px 12px;
-      border-radius: 5px;
-      font-size: 12px;
-      cursor: pointer;
-      font-family: monospace;
-    }
-    #toggle-debug:hover {
-      background: #555;
-    }
   </style>
 </head>
 <body>
@@ -70,94 +31,204 @@
 <h3 id="status">Iniciando câmera...</h3>
 <div id="reader" style="display:none;"><div id="frame"></div></div>
 <div id="mensagem">✔ Leitura confirmada</div>
-<div id="debug-panel"></div>
-<button id="toggle-debug">🐛 Mostrar Debug</button>
 
 <script>
-// Sistema de logs aprimorado
-const LOGS = [];
-let debugMode = false;
+// Sistema de logs simplificado (só console)
+const _log = (msg, ...args) => console.log(`[QR] ${msg}`, ...args);
+const _err = (msg, ...args) => console.error(`[QR] ❌ ${msg}`, ...args);
+const _warn = (msg, ...args) => console.warn(`[QR] ⚠️ ${msg}`, ...args);
 
-// Verificar se deve ativar debug via URL
-const urlParams = new URLSearchParams(window.location.search);
-if (urlParams.get("debug") === "true" || urlParams.get("debug") === "1") {
-  debugMode = true;
-  document.body.classList.add('debug-visible');
-  console.log('🔧 Debug mode ativado via parâmetro URL');
-}
-
-const _log = (msg, ...args) => {
-  const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
-  const logMsg = `[${timestamp}] ${msg}`;
-  console.log(logMsg, ...args);
-  LOGS.push({ type: 'log', msg: logMsg, args });
-  updateDebugPanel();
-};
-
-const _err = (msg, ...args) => {
-  const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
-  const logMsg = `[${timestamp}] ❌ ERRO: ${msg}`;
-  console.error(logMsg, ...args);
-  LOGS.push({ type: 'error', msg: logMsg, args });
-  updateDebugPanel();
-};
-
-const _warn = (msg, ...args) => {
-  const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
-  const logMsg = `[${timestamp}] ⚠️ ${msg}`;
-  console.warn(logMsg, ...args);
-  LOGS.push({ type: 'warn', msg: logMsg, args });
-  updateDebugPanel();
-};
-
-function updateDebugPanel() {
-  if (!debugMode) return;
-  const panel = document.getElementById('debug-panel');
-  if (!panel) return;
-  
-  const lastLogs = LOGS.slice(-20);
-  panel.innerHTML = lastLogs.map(log => 
-    `<div style="color: ${log.type === 'error' ? '#f00' : log.type === 'warn' ? '#ff0' : '#0f0'}; border-bottom: 1px solid #333; padding: 2px 0;">${log.msg}</div>`
-  ).join('');
-  
-  panel.scrollTop = panel.scrollHeight;
-}
-
-// Botão para ativar/desativar debug
-document.getElementById('toggle-debug').addEventListener('click', () => {
-  debugMode = !debugMode;
-  document.body.classList.toggle('debug-visible', debugMode);
-  _log(`🐛 Debug mode ${debugMode ? 'ativado' : 'desativado'}`);
-  if (debugMode) {
-    document.getElementById('toggle-debug').textContent = '🐛 Ocultar Debug';
-  } else {
-    document.getElementById('toggle-debug').textContent = '🐛 Mostrar Debug';
-  }
-});
-
-// Inicializar texto do botão
-if (debugMode) {
-  document.getElementById('toggle-debug').textContent = '🐛 Ocultar Debug';
-}
-
-// Captura erros globais não tratados
+// Captura erros globais
 window.addEventListener('error', (e) => {
-  _err('ERRO GLOBAL NÃO TRATADO:', e.message, '| arquivo:', e.filename, '| linha:', e.lineno);
+  _err('ERRO GLOBAL:', e.message, 'em', e.filename, 'linha', e.lineno);
   _err('Stack:', e.error?.stack);
 });
 
 window.addEventListener('unhandledrejection', (e) => {
-  _err('PROMISE REJEITADA SEM CATCH:', e.reason);
-  if (e.reason?.stack) _err('Stack:', e.reason.stack);
+  _err('PROMISE REJEITADA:', e.reason);
 });
 
 /* ── FASE 1: AMBIENTE ── */
 _log('=== 🚀 INÍCIO DO SCANNER ===');
 _log('UserAgent:', navigator.userAgent);
 _log('URL completa:', location.href);
-_log('Debug ativado por URL:', urlParams.get("debug"));
+_log('Protocolo:', location.protocol);
 
-// ... (restante do código permanece igual) ...
+/* ── FASE 2: PARÂMETROS ── */
+const params = new URLSearchParams(window.location.search);
+const token = params.get("token");
+const paramOrigem = params.get("origem");
+const origemWebApp = paramOrigem ? decodeURIComponent(paramOrigem) : "*";
+
+_log('Token:', token ?? '❌ AUSENTE');
+_log('Origem:', origemWebApp);
+
+if (!token) {
+  _err('❌ Token ausente na URL');
+  document.body.innerHTML = "<h3>Token de Sessão ausente</h3>";
+  throw new Error("Token obrigatório.");
+}
+
+/* ── FASE 3: VERIFICAR POPUP ── */
+_log('window.opener:', window.opener);
+_log('window.opener existe?', !!window.opener);
+
+if (!window.opener) {
+  _err('❌ BLOQUEADO: window.opener é null. Página não foi aberta como popup.');
+  document.body.innerHTML = "<h3>Acesso inválido - Página deve ser aberta exclusivamente pelo SIGI.</h3>";
+  throw new Error("Página deve ser aberta exclusivamente pelo SIGI.");
+}
+
+_log('✅ window.opener OK');
+
+/* ── FASE 4: CRIAR SCANNER ── */
+_log('Criando Html5Qrcode...');
+let scanner;
+try {
+  scanner = new Html5Qrcode("reader");
+  _log('✅ Scanner criado');
+} catch (e) {
+  _err('❌ Falha ao criar scanner:', e);
+  throw e;
+}
+
+let leituraFeita = false;
+let qrCodeLido = null;
+
+/* ── FASE 5: CALLBACK DE LEITURA ── */
+function sucesso(qr) {
+  _log('=== 📸 QR CODE LIDO ===');
+  _log('Conteúdo:', qr);
+  
+  if (leituraFeita) {
+    _warn('Leitura duplicada ignorada');
+    return;
+  }
+  
+  leituraFeita = true;
+  qrCodeLido = qr;
+  
+  // UI
+  document.getElementById("frame").classList.add("sucesso");
+  document.getElementById("mensagem").style.display = "block";
+  document.getElementById("status").style.display = "none";
+  _log('✅ UI atualizada');
+  
+  const payload = {
+    tipo: "qr",
+    codigo: qr,
+    token: token,
+    timestamp: new Date().toISOString()
+  };
+  
+  _log('Payload a enviar:', JSON.stringify(payload));
+  
+  const enviar = () => {
+    _log('Enviando postMessage...');
+    _log('window.opener existe?', !!window.opener);
+    _log('window.opener.closed?', window.opener?.closed);
+    
+    try {
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage(payload, origemWebApp);
+        _log('✅ postMessage enviado para:', origemWebApp);
+      } else {
+        _err('❌ window.opener indisponível ou fechado');
+      }
+    } catch (e) {
+      _err('❌ Erro no postMessage:', e);
+    }
+    
+    _log('Aguardando 500ms para fechar...');
+    setTimeout(() => {
+      _log('Chamando window.close()...');
+      try {
+        window.close();
+        _log('✅ window.close() chamado');
+      } catch (e) {
+        _err('❌ Erro no window.close():', e);
+      }
+    }, 500);
+  };
+  
+  _log('Parando câmera...');
+  scanner.stop()
+    .then(() => {
+      _log('✅ Câmera parada, enviando dados...');
+      enviar();
+    })
+    .catch((e) => {
+      _err('⚠️ Erro ao parar câmera:', e);
+      _log('Continuando mesmo assim...');
+      enviar();
+    });
+}
+
+/* ── FASE 6: INICIAR CÂMERA ── */
+async function iniciarCamera() {
+  _log('=== 📷 INICIANDO CÂMERA ===');
+  
+  try {
+    // Verificar API de mídia
+    _log('navigator.mediaDevices:', !!navigator.mediaDevices);
+    if (!navigator.mediaDevices) {
+      throw new Error('navigator.mediaDevices indisponível. Verifique HTTPS e permissões.');
+    }
+    
+    document.getElementById("status").innerText = "📷 Escaneando...";
+    document.getElementById("reader").style.display = "block";
+    _log('UI preparada');
+    
+    _log('Buscando câmeras...');
+    const cameras = await Html5Qrcode.getCameras();
+    _log(`✅ Encontradas ${cameras.length} câmeras:`);
+    cameras.forEach((cam, i) => {
+      _log(`  ${i+1}: ${cam.label || 'Sem label'} (${cam.id})`);
+    });
+    
+    if (!cameras || cameras.length === 0) {
+      throw new Error('Nenhuma câmera encontrada');
+    }
+    
+    // Selecionar câmera (priorizar traseira)
+    let cameraId = cameras[0].id;
+    for (const cam of cameras) {
+      const label = cam.label.toLowerCase();
+      if (label.includes('back') || label.includes('rear') || 
+          label.includes('environment') || label.includes('traseira')) {
+        cameraId = cam.id;
+        _log(`✅ Câmera traseira selecionada: ${cam.label}`);
+        break;
+      }
+    }
+    
+    _log(`Iniciando scanner com câmera: ${cameraId}`);
+    await scanner.start(
+      cameraId,
+      { fps: 10, qrbox: { width: 200, height: 200 } },
+      sucesso
+    );
+    _log('✅ Scanner iniciado, aguardando QR Code...');
+    
+  } catch (err) {
+    _err('❌ ERRO AO INICIAR CÂMERA:', err.message);
+    _err('Stack:', err.stack);
+    document.getElementById("status").innerText = `❌ Erro: ${err.message}`;
+    
+    _log('Fechando em 3 segundos...');
+    setTimeout(() => {
+      try {
+        window.close();
+      } catch(e) {
+        _err('Não foi possível fechar:', e);
+      }
+    }, 3000);
+  }
+}
+
+// Iniciar tudo
+_log('Chamando iniciarCamera()...');
+iniciarCamera();
 </script>
 </body>
 </html>
