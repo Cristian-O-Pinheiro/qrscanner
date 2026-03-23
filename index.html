@@ -3,446 +3,232 @@
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://unpkg.com/html5-qrcode"></script>
-
   <style>
-    body { margin:0; font-family:Arial; text-align:center; background:black; color:white; }
-    #reader { width:100%; position:relative; }
-    #frame {
-      position:absolute; top:50%; left:50%;
-      transform:translate(-50%,-50%);
-      width:200px; height:200px;
-      border:4px solid white; border-radius:12px;
-      box-shadow:0 0 20px rgba(255,255,255,0.3);
-      pointer-events:none;
-      transition: all 0.3s ease;
-    }
-    #frame.sucesso { 
-      border:4px solid #00ff88; 
-      box-shadow:0 0 25px #00ff88;
-    }
-    #mensagem {
-      position:fixed; top:40%; left:50%;
-      transform:translate(-50%,-50%);
-      background:rgba(0,0,0,0.9);
-      padding:20px 30px;
-      border-radius:10px;
-      font-size:22px;
-      display:none;
-      z-index: 1000;
-      border: 2px solid #00ff88;
-      color: #00ff88;
-      font-weight: bold;
-    }
-    #status { padding: 10px; font-size: 14px; }
-    
-    /* Botão de debug */
-    .debug-btn {
-      position: fixed;
-      bottom: 20px;
-      right: 20px;
-      background: #ff4444;
-      color: white;
-      border: none;
-      padding: 12px 20px;
-      border-radius: 8px;
-      font-size: 14px;
-      font-weight: bold;
-      cursor: pointer;
-      z-index: 1002;
-      font-family: monospace;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-      transition: all 0.3s ease;
-    }
-    .debug-btn.ativo {
-      background: #00ff88;
-      color: black;
-      box-shadow: 0 0 15px #00ff88;
-    }
-    .debug-btn:hover {
-      transform: scale(1.05);
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+      text-align: center;
+      background: #000;
+      color: #fff;
     }
     
-    /* Painel de logs */
-    .log-container {
+    #status {
+      padding: 15px;
+      font-size: 16px;
+      background: rgba(0,0,0,0.7);
+      margin: 0;
       position: fixed;
-      bottom: 0;
+      top: 0;
       left: 0;
       right: 0;
-      background: rgba(0,0,0,0.95);
-      color: #0f0;
-      font-family: monospace;
-      font-size: 11px;
-      max-height: 0;
-      overflow-y: auto;
-      padding: 0;
-      text-align: left;
-      z-index: 1001;
-      border-top: 2px solid #0f0;
-      transition: max-height 0.3s ease;
+      z-index: 10;
     }
-    .log-container.visivel {
-      max-height: 300px;
-      padding: 10px;
-    }
-    .log-entry {
-      border-bottom: 1px solid #333;
-      padding: 4px 5px;
-      font-size: 11px;
-      font-family: monospace;
-    }
-    .log-error { color: #f00; }
-    .log-warn { color: #ff0; }
-    .log-success { color: #0f0; }
-    .log-info { color: #aaa; }
     
-    /* Painel de payload */
-    .payload-box {
+    #reader {
+      width: 100%;
+      height: 100vh;
+      position: relative;
+      background: #000;
+    }
+    
+    #frame {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 250px;
+      height: 250px;
+      border: 3px solid #fff;
+      border-radius: 16px;
+      box-shadow: 0 0 20px rgba(255,255,255,0.3);
+      pointer-events: none;
+      transition: all 0.3s ease;
+      z-index: 20;
+    }
+    
+    #frame.sucesso {
+      border-color: #00ff88;
+      box-shadow: 0 0 30px #00ff88;
+    }
+    
+    #mensagem {
       position: fixed;
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
       background: rgba(0,0,0,0.95);
-      border: 2px solid #00ff88;
-      border-radius: 10px;
-      padding: 20px;
-      margin: 10px;
-      text-align: left;
-      font-family: monospace;
-      font-size: 11px;
-      max-width: 90%;
-      max-height: 60%;
-      overflow: auto;
-      word-break: break-all;
-      z-index: 1003;
+      padding: 20px 30px;
+      border-radius: 12px;
+      font-size: 24px;
+      font-weight: bold;
       display: none;
+      z-index: 30;
+      border: 2px solid #00ff88;
+      color: #00ff88;
+      white-space: nowrap;
+      animation: fadeOut 1s ease forwards;
     }
-    .payload-box.visivel {
-      display: block;
+    
+    @keyframes fadeOut {
+      0% { opacity: 1; }
+      70% { opacity: 1; }
+      100% { opacity: 0; visibility: hidden; }
     }
-    .payload-box pre {
-      color: #0f0;
-      margin: 0;
-      white-space: pre-wrap;
-    }
-    .close-payload {
-      position: absolute;
-      top: 5px;
-      right: 10px;
-      background: none;
-      border: none;
-      color: white;
-      font-size: 20px;
-      cursor: pointer;
+    
+    .loading {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 14px;
+      color: #888;
     }
   </style>
 </head>
 <body>
 
-<h3 id="status">Iniciando câmera...</h3>
-<div id="reader" style="display:none;"><div id="frame"></div></div>
-<div id="mensagem">✓ QR Code lido com sucesso! ✓</div>
-
-<button id="btnDebug" class="debug-btn">🐛 ATIVAR DEBUG</button>
-
-<div id="logContainer" class="log-container">
-  <div style="font-weight: bold; margin-bottom: 5px;">📋 LOGS DO SCANNER:</div>
-</div>
-
-<div id="payloadBox" class="payload-box">
-  <button class="close-payload" id="closePayload">×</button>
-  <div id="payloadContent"></div>
-</div>
+<div id="status">📷 Iniciando câmera...</div>
+<div id="reader"></div>
+<div id="frame"></div>
+<div id="mensagem">✓ Leitura confirmada!</div>
 
 <script>
 // ============================================
-// SISTEMA DE DEBUG (controlado pelo botão)
+// QR CODE SCANNER - VERSÃO PRODUÇÃO
 // ============================================
-let debugAtivo = false;
-let logs = [];
-let leituraFeita = false;
-let qrCodeLido = null;
-let scanner = null;
-let ultimoPayload = null;
-
-function addLog(msg, type = 'info') {
-  const timestamp = new Date().toLocaleTimeString();
-  const logEntry = { timestamp, msg, type };
-  logs.push(logEntry);
+(function() {
+  'use strict';
   
-  // Manter últimas 100 mensagens
-  while (logs.length > 100) logs.shift();
+  let scanner = null;
+  let leituraFeita = false;
+  let token = null;
+  let origemWebApp = '*';
   
-  // Atualizar display visual se debug estiver ativo
-  if (debugAtivo) {
-    const container = document.getElementById('logContainer');
-    const logsDiv = container.querySelector('.logs-content') || (() => {
-      const div = document.createElement('div');
-      div.className = 'logs-content';
-      container.appendChild(div);
-      return div;
-    })();
-    
-    logsDiv.innerHTML = logs.map(log => 
-      `<div class="log-entry log-${log.type}">[${log.timestamp}] ${log.msg}</div>`
-    ).join('');
-    container.scrollTop = container.scrollHeight;
+  // Captura erros críticos
+  window.addEventListener('error', (e) => {
+    console.error('[SCANNER] Erro:', e.message);
+  });
+  
+  // ============================================
+  // 1. VALIDAÇÃO INICIAL
+  // ============================================
+  const params = new URLSearchParams(window.location.search);
+  token = params.get('token');
+  const paramOrigem = params.get('origem');
+  origemWebApp = paramOrigem ? decodeURIComponent(paramOrigem) : '*';
+  
+  if (!token) {
+    document.body.innerHTML = '<div style="padding: 20px; color: #ff4444;">❌ Token inválido. Feche esta janela e tente novamente.</div>';
+    throw new Error('Token obrigatório');
   }
   
-  // Sempre log no console
-  const consoleMethod = type === 'error' ? console.error : (type === 'warn' ? console.warn : console.log);
-  consoleMethod(`[QR] ${msg}`);
-}
-
-function mostrarPayload(payload) {
-  ultimoPayload = payload;
-  if (!debugAtivo) return;
-  
-  const box = document.getElementById('payloadBox');
-  const content = document.getElementById('payloadContent');
-  
-  const payloadJson = JSON.stringify(payload, null, 2);
-  content.innerHTML = `<strong>📦 PAYLOAD ENVIADO:</strong><br><br><pre>${payloadJson}</pre>`;
-  box.classList.add('visivel');
-  addLog('📦 Payload exibido na tela', 'success');
-}
-
-// Botão de debug
-document.getElementById('btnDebug').addEventListener('click', () => {
-  debugAtivo = !debugAtivo;
-  const btn = document.getElementById('btnDebug');
-  const logContainer = document.getElementById('logContainer');
-  
-  if (debugAtivo) {
-    btn.textContent = '🔴 DESATIVAR DEBUG';
-    btn.classList.add('ativo');
-    logContainer.classList.add('visivel');
-    addLog('🔧 MODO DEBUG ATIVADO - O popup NÃO fechará automaticamente', 'warn');
-    addLog('📝 Clique no botão "DESATIVAR DEBUG" para voltar ao modo normal', 'warn');
-  } else {
-    btn.textContent = '🐛 ATIVAR DEBUG';
-    btn.classList.remove('ativo');
-    logContainer.classList.remove('visivel');
-    document.getElementById('payloadBox').classList.remove('visivel');
-    addLog('Modo debug desativado', 'info');
-  }
-});
-
-// Fechar payload
-document.getElementById('closePayload').addEventListener('click', () => {
-  document.getElementById('payloadBox').classList.remove('visivel');
-});
-
-// Captura erros globais
-window.addEventListener('error', (e) => {
-  addLog(`ERRO GLOBAL: ${e.message}`, 'error');
-  if (e.error?.stack) addLog(`Stack: ${e.error.stack.substring(0, 200)}`, 'error');
-});
-
-window.addEventListener('unhandledrejection', (e) => {
-  addLog(`PROMISE REJEITADA: ${e.reason}`, 'error');
-});
-
-/* ── FASE 1: AMBIENTE ── */
-addLog('=== 🚀 INÍCIO DO SCANNER ===', 'success');
-addLog(`URL: ${location.href}`, 'info');
-
-/* ── FASE 2: PARÂMETROS ── */
-const params = new URLSearchParams(window.location.search);
-const token = params.get("token");
-const paramOrigem = params.get("origem");
-const origemWebApp = paramOrigem ? decodeURIComponent(paramOrigem) : "*";
-
-addLog(`Token: ${token ? '✓ Presente' : '❌ AUSENTE'}`, token ? 'success' : 'error');
-addLog(`Origem: ${origemWebApp}`, 'info');
-
-if (!token) {
-  addLog('❌ Token ausente na URL', 'error');
-  document.body.innerHTML = "<h3>Token de Sessão ausente</h3>";
-  throw new Error("Token obrigatório.");
-}
-
-/* ── FASE 3: VERIFICAR POPUP ── */
-addLog(`window.opener existe? ${!!window.opener}`, !!window.opener ? 'success' : 'error');
-
-if (!window.opener) {
-  addLog('❌ BLOQUEADO: window.opener é null', 'error');
-  document.body.innerHTML = "<h3>Acesso inválido</h3>";
-  throw new Error("Página deve ser aberta exclusivamente pelo SIGI.");
-}
-
-addLog('✅ window.opener OK', 'success');
-
-/* ── FASE 4: CRIAR SCANNER ── */
-addLog('Criando Html5Qrcode...', 'info');
-try {
-  scanner = new Html5Qrcode("reader");
-  addLog('✅ Scanner criado com sucesso', 'success');
-} catch (e) {
-  addLog(`❌ Falha ao criar scanner: ${e.message}`, 'error');
-  throw e;
-}
-
-/* ── FASE 5: FUNÇÃO DE SUCESSO ── */
-function sucesso(qr) {
-  addLog('=== 📸 QR CODE LIDO ===', 'success');
-  addLog(`Conteúdo: ${qr}`, 'info');
-  addLog(`Tamanho: ${qr.length} caracteres`, 'info');
-  
-  if (leituraFeita) {
-    addLog('⚠️ Leitura duplicada ignorada', 'warn');
-    return;
+  if (!window.opener) {
+    document.body.innerHTML = '<div style="padding: 20px; color: #ff4444;">❌ Esta janela deve ser aberta pelo sistema.</div>';
+    throw new Error('window.opener é null');
   }
   
-  leituraFeita = true;
-  qrCodeLido = qr;
-  addLog('✅ Primeira leitura registrada', 'success');
-  
-  // UI: Borda verde
-  try {
-    document.getElementById("frame").classList.add("sucesso");
-    addLog('✅ Borda verde aplicada', 'success');
-  } catch (e) {
-    addLog(`❌ Erro na borda: ${e.message}`, 'error');
-  }
-  
-  // UI: Mensagem de sucesso
-  try {
-    const mensagemDiv = document.getElementById("mensagem");
-    mensagemDiv.style.display = "block";
-    addLog('✅ Mensagem de sucesso exibida', 'success');
-    
-    setTimeout(() => {
-      mensagemDiv.style.display = "none";
-    }, 1000);
-  } catch (e) {
-    addLog(`❌ Erro na mensagem: ${e.message}`, 'error');
-  }
-  
-  document.getElementById("status").style.display = "none";
-  
-  // Preparar payload
-  const payload = {
-    tipo: "qr",
-    codigo: qr,
-    token: token,
-    timestamp: new Date().toISOString(),
-    debugMode: debugAtivo
-  };
-  
-  addLog('📦 Payload preparado:', 'info');
-  addLog(JSON.stringify(payload, null, 2), 'info');
-  
-  // Mostrar payload se debug ativo
-  if (debugAtivo) {
-    mostrarPayload(payload);
-  }
-  
-  // Função de envio
-  const enviar = () => {
-    addLog('=== 📤 ENVIANDO DADOS ===', 'success');
-    addLog(`window.opener existe? ${!!window.opener}`, 'info');
-    addLog(`window.opener.closed? ${window.opener?.closed}`, 'info');
-    
+  // ============================================
+  // 2. INICIALIZAR SCANNER
+  // ============================================
+  async function iniciarScanner() {
     try {
-      if (window.opener && !window.opener.closed) {
-        addLog(`Enviando postMessage para ${origemWebApp}`, 'info');
-        window.opener.postMessage(payload, origemWebApp);
-        addLog('✅ postMessage enviado com sucesso!', 'success');
-      } else {
-        addLog('❌ window.opener indisponível!', 'error');
+      // Verificar suporte a câmera
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Seu navegador não suporta acesso à câmera');
       }
-    } catch (e) {
-      addLog(`❌ Erro no postMessage: ${e.message}`, 'error');
-    }
-    
-    if (debugAtivo) {
-      addLog('🔧 MODO DEBUG ATIVO - Popup NÃO será fechado', 'warn');
-      addLog('⚠️ Clique no botão "DESATIVAR DEBUG" ou feche manualmente quando terminar', 'warn');
-    } else {
-      addLog('Aguardando 500ms para fechar popup...', 'info');
-      setTimeout(() => {
-        addLog('Chamando window.close()...', 'info');
-        try {
-          window.close();
-          addLog('✅ Popup fechado', 'success');
-        } catch (e) {
-          addLog(`❌ Erro ao fechar: ${e.message}`, 'error');
+      
+      // Obter lista de câmeras
+      const cameras = await Html5Qrcode.getCameras();
+      
+      if (!cameras || cameras.length === 0) {
+        throw new Error('Nenhuma câmera encontrada');
+      }
+      
+      // Selecionar melhor câmera (priorizar traseira)
+      let cameraId = cameras[0].id;
+      for (const cam of cameras) {
+        const label = cam.label.toLowerCase();
+        if (label.includes('back') || label.includes('rear') || 
+            label.includes('environment') || label.includes('traseira')) {
+          cameraId = cam.id;
+          break;
         }
-      }, 500);
-    }
-  };
-  
-  // Parar câmera
-  addLog('Parando câmera...', 'info');
-  if (scanner && scanner.isScanning) {
-    scanner.stop()
-      .then(() => {
-        addLog('✅ Câmera parada com sucesso', 'success');
-        enviar();
-      })
-      .catch((e) => {
-        addLog(`⚠️ Erro ao parar câmera: ${e.message}`, 'warn');
-        enviar();
-      });
-  } else {
-    addLog('Scanner não estava ativo', 'warn');
-    enviar();
-  }
-}
-
-/* ── FASE 6: INICIAR CÂMERA ── */
-async function iniciarCamera() {
-  addLog('=== 📷 INICIANDO CÂMERA ===', 'success');
-  addLog('💡 DICA: Clique em "ATIVAR DEBUG" antes de escanear para ver os logs e o payload', 'info');
-  
-  try {
-    if (!navigator.mediaDevices) {
-      throw new Error('navigator.mediaDevices indisponível');
-    }
-    
-    document.getElementById("status").innerText = "📷 Escaneando...";
-    document.getElementById("reader").style.display = "block";
-    
-    const cameras = await Html5Qrcode.getCameras();
-    addLog(`✅ Encontradas ${cameras.length} câmeras`, 'success');
-    
-    cameras.forEach((cam, i) => {
-      addLog(`  ${i+1}: ${cam.label || 'Sem label'}`, 'info');
-    });
-    
-    if (!cameras || cameras.length === 0) {
-      throw new Error('Nenhuma câmera encontrada');
-    }
-    
-    let cameraId = cameras[0].id;
-    for (const cam of cameras) {
-      const label = cam.label.toLowerCase();
-      if (label.includes('back') || label.includes('rear') || 
-          label.includes('environment') || label.includes('traseira')) {
-        cameraId = cam.id;
-        addLog(`✅ Câmera traseira selecionada: ${cam.label}`, 'success');
-        break;
       }
+      
+      // Criar instância do scanner
+      scanner = new Html5Qrcode('reader');
+      
+      // Iniciar escaneamento
+      await scanner.start(
+        cameraId,
+        {
+          fps: 10,
+          qrbox: { width: 250, height: 250 }
+        },
+        onScanSuccess
+      );
+      
+      document.getElementById('status').innerHTML = '📷 Aponte para o QR Code';
+      
+    } catch (err) {
+      console.error('[SCANNER] Erro ao iniciar:', err);
+      document.getElementById('status').innerHTML = `❌ ${err.message}`;
+      setTimeout(() => window.close(), 3000);
+    }
+  }
+  
+  // ============================================
+  // 3. CALLBACK DE SUCESSO
+  // ============================================
+  function onScanSuccess(qrCode) {
+    if (leituraFeita) return;
+    leituraFeita = true;
+    
+    console.log('[SCANNER] QR Code lido com sucesso');
+    
+    // Efeitos visuais
+    const frame = document.getElementById('frame');
+    const mensagem = document.getElementById('mensagem');
+    const status = document.getElementById('status');
+    
+    frame.classList.add('sucesso');
+    mensagem.style.display = 'block';
+    status.style.display = 'none';
+    
+    // Preparar payload
+    const payload = {
+      tipo: 'qr',
+      codigo: qrCode,
+      token: token,
+      timestamp: new Date().toISOString()
+    };
+    
+    // Parar câmera
+    if (scanner && scanner.isScanning) {
+      scanner.stop().catch(e => console.warn('[SCANNER] Erro ao parar:', e));
     }
     
-    addLog(`Iniciando scanner...`, 'info');
-    
-    await scanner.start(
-      cameraId,
-      { fps: 10, qrbox: { width: 200, height: 200 } },
-      sucesso
-    );
-    addLog('✅ Scanner iniciado! Aguardando QR Code...', 'success');
-    addLog('💡 Se quiser ver os logs, clique em "ATIVAR DEBUG"', 'info');
-    
-  } catch (err) {
-    addLog(`❌ ERRO: ${err.message}`, 'error');
-    document.getElementById("status").innerText = `❌ Erro: ${err.message}`;
+    // Enviar dados e fechar
+    setTimeout(() => {
+      try {
+        if (window.opener && !window.opener.closed) {
+          window.opener.postMessage(payload, origemWebApp);
+        }
+      } catch (e) {
+        console.error('[SCANNER] Erro ao enviar:', e);
+      }
+      
+      // Fechar janela
+      setTimeout(() => window.close(), 300);
+    }, 500);
   }
-}
-
-// Iniciar
-iniciarCamera();
+  
+  // ============================================
+  // 4. INICIAR
+  // ============================================
+  iniciarScanner();
+  
+})();
 </script>
 </body>
 </html>
