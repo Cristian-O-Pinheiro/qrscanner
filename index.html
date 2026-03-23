@@ -10,7 +10,7 @@
     #frame {
       position:absolute; top:50%; left:50%;
       transform:translate(-50%,-50%);
-      width:250px; height:250px;
+      width:200px; height:200px;
       border:4px solid white; border-radius:12px;
       box-shadow:0 0 20px rgba(255,255,255,0.3);
       pointer-events:none;
@@ -23,6 +23,7 @@
       padding:20px 30px; border-radius:10px;
       font-size:22px; display:none;
     }
+    #status { padding: 10px; }
   </style>
 </head>
 <body>
@@ -32,13 +33,13 @@
 <div id="mensagem">✔ Leitura confirmada</div>
 
 <script>
-/* === SEGURANÇA BÁSICA DE CONTEXTO === */
+/* === SEGURANÇA: só abre como popup === */
 if (!window.opener) {
   document.body.innerHTML = "<h3>Acesso inválido</h3>";
   throw new Error("Página deve ser aberta exclusivamente pelo SIGI.");
 }
 
-/* === REPASSE DE PARÂMETROS === */
+/* === PARÂMETROS === */
 const params = new URLSearchParams(window.location.search);
 const token = params.get("token");
 const paramOrigem = params.get("origem");
@@ -53,27 +54,47 @@ if (!token) {
 const scanner = new Html5Qrcode("reader");
 let leituraFeita = false;
 
+/* === LIMPEZA GARANTIDA AO FECHAR O POPUP === */
+function pararCamera() {
+  try {
+    if (scanner && scanner.isScanning) {
+      scanner.stop().catch(() => {});
+    }
+  } catch (e) {}
+}
+
+// Desktop (Chrome, Firefox)
+window.addEventListener('beforeunload', pararCamera);
+// Mobile iOS — Safari dispensa 'beforeunload'; usa 'pagehide'
+window.addEventListener('pagehide', pararCamera);
+
+/* === LEITURA DO QR === */
 function sucesso(qr) {
   if (leituraFeita) return;
   leituraFeita = true;
 
-  document.getElementById("status").style.display = "none";
   document.getElementById("frame").classList.add("sucesso");
   document.getElementById("mensagem").style.display = "block";
+  document.getElementById("status").style.display = "none";
 
   const enviar = () => {
     setTimeout(() => {
-      // Repassa os dados para validação OFICIAL e SEGURA no Backend
-      window.opener.postMessage({
-        tipo: "qr",
-        codigo: qr,
-        token: token
-      }, origemWebApp);
-
+      try {
+        if (window.opener && !window.opener.closed) {
+          window.opener.postMessage({
+            tipo: "qr",
+            codigo: qr,
+            token: token
+          }, origemWebApp);
+        }
+      } catch (e) {
+        console.error("Falha ao enviar postMessage:", e);
+      }
       setTimeout(() => window.close(), 300);
-    }, 400);
+    }, 500);
   };
 
+  // Para o scanner antes de enviar (com fallback garantido)
   scanner.stop().then(enviar).catch(enviar);
 }
 
@@ -90,6 +111,7 @@ async function iniciarCamera() {
       return;
     }
 
+    // Prefere câmera traseira
     let cameraId = cameras[cameras.length - 1].id;
     for (const cam of cameras) {
       const label = cam.label.toLowerCase();
@@ -100,18 +122,23 @@ async function iniciarCamera() {
       }
     }
 
-    await scanner.start(cameraId, { fps: 10, qrbox: 250 }, sucesso);
+    await scanner.start(
+      cameraId,
+      {
+        fps: 10,
+        qrbox: { width: 200, height: 200 } // Objeto explícito — mais compatível
+      },
+      sucesso
+    );
 
   } catch (err) {
     document.getElementById("status").innerText = "Erro ao acessar câmera: " + err.message;
     console.error(err);
-    setTimeout(() => window.close(), 3000);
+    setTimeout(() => window.close(), 4000);
   }
 }
 
-// Inicia imediatamente!
 iniciarCamera();
-
 </script>
 </body>
 </html>
