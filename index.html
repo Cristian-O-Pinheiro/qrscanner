@@ -33,107 +33,181 @@
 <div id="mensagem">✔ Leitura confirmada</div>
 
 <script>
+const _log = (msg, ...args) => console.log(`[SIGI-SCANNER] ${msg}`, ...args);
+const _err = (msg, ...args) => console.error(`[SIGI-SCANNER] ${msg}`, ...args);
+const _warn = (msg, ...args) => console.warn(`[SIGI-SCANNER] ${msg}`, ...args);
+
+// Captura erros globais não tratados
+window.addEventListener('error', (e) => {
+  _err('ERRO GLOBAL NÃO TRATADO:', e.message, '| arquivo:', e.filename, '| linha:', e.lineno);
+});
+window.addEventListener('unhandledrejection', (e) => {
+  _err('PROMISE REJEITADA SEM CATCH:', e.reason);
+});
+
+/* ── FASE 1: AMBIENTE ── */
+_log('=== INÍCIO ===');
+_log('UserAgent:', navigator.userAgent);
+_log('URL completa:', location.href);
+_log('Protocolo:', location.protocol, '| Host:', location.host);
+_log('window.opener:', window.opener);
+_log('window.opener fechado?', window.opener ? window.opener.closed : 'N/A (opener é null)');
+
 /* === SEGURANÇA: só abre como popup === */
 if (!window.opener) {
+  _err('BLOQUEADO: window.opener é null. Página não foi aberta como popup, ou o browser bloqueou o opener no mobile.');
   document.body.innerHTML = "<h3>Acesso inválido</h3>";
   throw new Error("Página deve ser aberta exclusivamente pelo SIGI.");
 }
+_log('window.opener OK.');
 
-/* === PARÂMETROS === */
+/* ── FASE 2: PARÂMETROS ── */
 const params = new URLSearchParams(window.location.search);
 const token = params.get("token");
 const paramOrigem = params.get("origem");
 const origemWebApp = paramOrigem ? decodeURIComponent(paramOrigem) : "*";
 
+_log('Parâmetro token:', token ?? 'AUSENTE');
+_log('Parâmetro origem (raw):', paramOrigem ?? 'AUSENTE');
+_log('origemWebApp (decodificado):', origemWebApp);
+
 if (!token) {
+  _err('BLOQUEADO: token ausente na URL.');
   document.body.innerHTML = "<h3>Token de Sessão ausente</h3>";
   throw new Error("Token obrigatório.");
 }
+_log('Token OK.');
 
-/* === SCANNER === */
+/* ── FASE 3: SCANNER ── */
+_log('Instanciando Html5Qrcode...');
 const scanner = new Html5Qrcode("reader");
 let leituraFeita = false;
+_log('Html5Qrcode instanciado.');
 
 /* === LIMPEZA GARANTIDA AO FECHAR O POPUP === */
 function pararCamera() {
+  _log('pararCamera() chamado.');
   try {
     if (scanner && scanner.isScanning) {
-      scanner.stop().catch(() => {});
+      _log('Scanner ativo — chamando scanner.stop()...');
+      scanner.stop().catch((e) => _warn('scanner.stop() falhou no cleanup:', e));
+    } else {
+      _log('Scanner não estava ativo no momento do cleanup.');
     }
-  } catch (e) {}
+  } catch (e) {
+    _err('Exceção em pararCamera():', e);
+  }
 }
 
-// Desktop (Chrome, Firefox)
-window.addEventListener('beforeunload', pararCamera);
-// Mobile iOS — Safari dispensa 'beforeunload'; usa 'pagehide'
-window.addEventListener('pagehide', pararCamera);
+window.addEventListener('beforeunload', () => { _log('Evento: beforeunload'); pararCamera(); });
+window.addEventListener('pagehide',      () => { _log('Evento: pagehide');      pararCamera(); });
 
-/* === LEITURA DO QR === */
+/* ── FASE 4: CALLBACK DE LEITURA ── */
 function sucesso(qr) {
-  if (leituraFeita) return;
+  _log('sucesso() chamado. leituraFeita =', leituraFeita);
+  if (leituraFeita) {
+    _warn('Leitura duplicada ignorada.');
+    return;
+  }
   leituraFeita = true;
+  _log('QR Code lido:', qr);
 
   document.getElementById("frame").classList.add("sucesso");
   document.getElementById("mensagem").style.display = "block";
   document.getElementById("status").style.display = "none";
+  _log('UI atualizada: moldura verde + mensagem de confirmação visível.');
 
   const enviar = () => {
+    _log('enviar() chamado. Aguardando 500ms antes do postMessage...');
     setTimeout(() => {
+      _log('Verificando window.opener antes do postMessage...');
+      _log('window.opener:', window.opener);
+      _log('window.opener.closed:', window.opener ? window.opener.closed : 'N/A');
+
       try {
         if (window.opener && !window.opener.closed) {
+          _log('Enviando postMessage para origem:', origemWebApp);
+          _log('Payload:', { tipo: "qr", codigo: qr, token: token });
           window.opener.postMessage({
             tipo: "qr",
             codigo: qr,
             token: token
           }, origemWebApp);
+          _log('postMessage enviado com sucesso.');
+        } else {
+          _err('FALHA: window.opener indisponível ou fechado — postMessage NÃO enviado.');
         }
       } catch (e) {
-        console.error("Falha ao enviar postMessage:", e);
+        _err('Exceção ao chamar postMessage:', e);
       }
-      setTimeout(() => window.close(), 300);
+
+      _log('Aguardando 300ms para chamar window.close()...');
+      setTimeout(() => {
+        _log('Chamando window.close()...');
+        window.close();
+        _log('window.close() chamado. (Se este log aparecer, o browser pode ter bloqueado o fechamento.)');
+      }, 300);
     }, 500);
   };
 
-  // Para o scanner antes de enviar (com fallback garantido)
-  scanner.stop().then(enviar).catch(enviar);
+  _log('Chamando scanner.stop() para liberar câmera...');
+  scanner.stop()
+    .then(() => { _log('scanner.stop() resolvido com sucesso.'); enviar(); })
+    .catch((e) => { _warn('scanner.stop() rejeitado:', e, '| Chamando enviar() mesmo assim.'); enviar(); });
 }
 
-/* === INICIAR CÂMERA === */
+/* ── FASE 5: INICIAR CÂMERA ── */
 async function iniciarCamera() {
+  _log('=== iniciarCamera() iniciado ===');
+
   try {
+    // Verifica se a API de mídia está disponível
+    _log('navigator.mediaDevices:', navigator.mediaDevices ?? 'INDISPONÍVEL');
+    if (!navigator.mediaDevices) {
+      _err('navigator.mediaDevices indisponível — possível contexto não-seguro (não é HTTPS?)');
+    }
+
     document.getElementById("status").innerText = "Escaneando...";
     document.getElementById("reader").style.display = "block";
 
+    _log('Chamando Html5Qrcode.getCameras()...');
     const cameras = await Html5Qrcode.getCameras();
+    _log('Câmeras encontradas:', cameras.length, cameras);
+
     if (!cameras || cameras.length === 0) {
+      _err('Nenhuma câmera encontrada. Fechando em 3s.');
       document.getElementById("status").innerText = "Nenhuma câmera encontrada.";
       setTimeout(() => window.close(), 3000);
       return;
     }
 
-    // Prefere câmera traseira
+    // Seleciona câmera traseira
     let cameraId = cameras[cameras.length - 1].id;
+    _log('Câmera padrão (fallback = última da lista):', cameraId);
+
     for (const cam of cameras) {
       const label = cam.label.toLowerCase();
+      _log('Avaliando câmera:', cam.id, '| label:', cam.label);
       if (label.includes("back") || label.includes("rear") ||
           label.includes("environment") || label.includes("traseira")) {
         cameraId = cam.id;
+        _log('Câmera traseira identificada:', cam.label);
         break;
       }
     }
+    _log('cameraId selecionado:', cameraId);
 
+    _log('Chamando scanner.start()...');
     await scanner.start(
       cameraId,
-      {
-        fps: 10,
-        qrbox: { width: 200, height: 200 } // Objeto explícito — mais compatível
-      },
+      { fps: 10, qrbox: { width: 200, height: 200 } },
       sucesso
     );
+    _log('scanner.start() completou — câmera ativa e escaneando.');
 
   } catch (err) {
+    _err('EXCEÇÃO em iniciarCamera():', err.name, err.message, err);
     document.getElementById("status").innerText = "Erro ao acessar câmera: " + err.message;
-    console.error(err);
     setTimeout(() => window.close(), 4000);
   }
 }
