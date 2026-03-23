@@ -14,45 +14,103 @@
       border:4px solid white; border-radius:12px;
       box-shadow:0 0 20px rgba(255,255,255,0.3);
       pointer-events:none;
+      transition: all 0.3s ease;
     }
-    #frame.sucesso { border:4px solid #00ff88; box-shadow:0 0 25px #00ff88; }
+    #frame.sucesso { 
+      border:4px solid #00ff88; 
+      box-shadow:0 0 25px #00ff88;
+    }
     #mensagem {
       position:fixed; top:40%; left:50%;
       transform:translate(-50%,-50%);
-      background:rgba(0,0,0,0.8);
-      padding:20px 30px; border-radius:10px;
-      font-size:22px; display:none;
+      background:rgba(0,0,0,0.9);
+      padding:20px 30px;
+      border-radius:10px;
+      font-size:22px;
+      display:none;
+      z-index: 1000;
+      border: 2px solid #00ff88;
+      color: #00ff88;
+      font-weight: bold;
     }
-    #status { padding: 10px; }
+    #status { padding: 10px; font-size: 14px; }
+    .log-container {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: rgba(0,0,0,0.95);
+      color: #0f0;
+      font-family: monospace;
+      font-size: 10px;
+      max-height: 150px;
+      overflow-y: auto;
+      padding: 5px;
+      text-align: left;
+      z-index: 1001;
+      border-top: 1px solid #0f0;
+    }
+    .log-entry {
+      border-bottom: 1px solid #333;
+      padding: 2px 5px;
+      font-size: 10px;
+    }
+    .log-error { color: #f00; }
+    .log-warn { color: #ff0; }
+    .log-success { color: #0f0; }
   </style>
 </head>
 <body>
 
 <h3 id="status">Iniciando câmera...</h3>
 <div id="reader" style="display:none;"><div id="frame"></div></div>
-<div id="mensagem">✔ Leitura confirmada</div>
+<div id="mensagem">✓ QR Code lido com sucesso! ✓</div>
+<div id="visualLogs" class="log-container"></div>
 
 <script>
-// Sistema de logs simplificado (só console)
-const _log = (msg, ...args) => console.log(`[QR] ${msg}`, ...args);
-const _err = (msg, ...args) => console.error(`[QR] ❌ ${msg}`, ...args);
-const _warn = (msg, ...args) => console.warn(`[QR] ⚠️ ${msg}`, ...args);
+// Sistema de logs visual (além do console)
+const visualLogs = [];
+let leituraFeita = false;
+let qrCodeLido = null;
+let scanner = null;
+
+function addVisualLog(msg, type = 'info') {
+  const timestamp = new Date().toLocaleTimeString();
+  const logEntry = { timestamp, msg, type };
+  visualLogs.push(logEntry);
+  
+  // Manter apenas últimas 30 mensagens
+  while (visualLogs.length > 30) visualLogs.shift();
+  
+  // Atualizar display visual
+  const container = document.getElementById('visualLogs');
+  if (container) {
+    container.innerHTML = visualLogs.map(log => 
+      `<div class="log-entry log-${log.type}">[${log.timestamp}] ${log.msg}</div>`
+    ).join('');
+    container.scrollTop = container.scrollHeight;
+  }
+  
+  // Também log no console
+  const consoleMethod = type === 'error' ? console.error : (type === 'warn' ? console.warn : console.log);
+  consoleMethod(`[QR] ${msg}`);
+}
 
 // Captura erros globais
 window.addEventListener('error', (e) => {
-  _err('ERRO GLOBAL:', e.message, 'em', e.filename, 'linha', e.lineno);
-  _err('Stack:', e.error?.stack);
+  addVisualLog(`ERRO GLOBAL: ${e.message} em ${e.filename}:${e.lineno}`, 'error');
+  addVisualLog(`Stack: ${e.error?.stack?.substring(0, 200)}`, 'error');
 });
 
 window.addEventListener('unhandledrejection', (e) => {
-  _err('PROMISE REJEITADA:', e.reason);
+  addVisualLog(`PROMISE REJEITADA: ${e.reason}`, 'error');
+  if (e.reason?.stack) addVisualLog(`Stack: ${e.reason.stack.substring(0, 200)}`, 'error');
 });
 
 /* ── FASE 1: AMBIENTE ── */
-_log('=== 🚀 INÍCIO DO SCANNER ===');
-_log('UserAgent:', navigator.userAgent);
-_log('URL completa:', location.href);
-_log('Protocolo:', location.protocol);
+addVisualLog('=== 🚀 INÍCIO DO SCANNER ===', 'success');
+addVisualLog(`UserAgent: ${navigator.userAgent.substring(0, 80)}`, 'info');
+addVisualLog(`URL: ${location.href}`, 'info');
 
 /* ── FASE 2: PARÂMETROS ── */
 const params = new URLSearchParams(window.location.search);
@@ -60,130 +118,189 @@ const token = params.get("token");
 const paramOrigem = params.get("origem");
 const origemWebApp = paramOrigem ? decodeURIComponent(paramOrigem) : "*";
 
-_log('Token:', token ?? '❌ AUSENTE');
-_log('Origem:', origemWebApp);
+addVisualLog(`Token: ${token ? '✓ Presente' : '❌ AUSENTE'}`, token ? 'success' : 'error');
+addVisualLog(`Origem: ${origemWebApp}`, 'info');
 
 if (!token) {
-  _err('❌ Token ausente na URL');
+  addVisualLog('❌ Token ausente na URL - FECHANDO', 'error');
   document.body.innerHTML = "<h3>Token de Sessão ausente</h3>";
   throw new Error("Token obrigatório.");
 }
 
 /* ── FASE 3: VERIFICAR POPUP ── */
-_log('window.opener:', window.opener);
-_log('window.opener existe?', !!window.opener);
+addVisualLog(`window.opener existe? ${!!window.opener}`, !!window.opener ? 'success' : 'error');
 
 if (!window.opener) {
-  _err('❌ BLOQUEADO: window.opener é null. Página não foi aberta como popup.');
-  document.body.innerHTML = "<h3>Acesso inválido - Página deve ser aberta exclusivamente pelo SIGI.</h3>";
+  addVisualLog('❌ BLOQUEADO: window.opener é null', 'error');
+  document.body.innerHTML = "<h3>Acesso inválido</h3>";
   throw new Error("Página deve ser aberta exclusivamente pelo SIGI.");
 }
 
-_log('✅ window.opener OK');
+addVisualLog('✅ window.opener OK', 'success');
 
 /* ── FASE 4: CRIAR SCANNER ── */
-_log('Criando Html5Qrcode...');
-let scanner;
+addVisualLog('Criando Html5Qrcode...', 'info');
 try {
   scanner = new Html5Qrcode("reader");
-  _log('✅ Scanner criado');
+  addVisualLog('✅ Scanner criado com sucesso', 'success');
 } catch (e) {
-  _err('❌ Falha ao criar scanner:', e);
+  addVisualLog(`❌ Falha ao criar scanner: ${e.message}`, 'error');
   throw e;
 }
 
-let leituraFeita = false;
-let qrCodeLido = null;
-
-/* ── FASE 5: CALLBACK DE LEITURA ── */
+/* ── FASE 5: FUNÇÃO DE SUCESSO COM LOGS DETALHADOS ── */
 function sucesso(qr) {
-  _log('=== 📸 QR CODE LIDO ===');
-  _log('Conteúdo:', qr);
+  addVisualLog('=== 📸 CALLBACK SUCESSO INICIADO ===', 'success');
+  addVisualLog(`leituraFeita atual: ${leituraFeita}`, 'info');
+  addVisualLog(`QR Code lido (primeiros 50 chars): ${qr.substring(0, 50)}...`, 'info');
   
+  // PASSO 1: Verificar se já foi lido
+  addVisualLog('PASSO 1: Verificando leitura duplicada...', 'info');
   if (leituraFeita) {
-    _warn('Leitura duplicada ignorada');
+    addVisualLog('⚠️ Leitura duplicada ignorada', 'warn');
     return;
   }
+  addVisualLog('✅ Primeira leitura, continuando...', 'success');
   
+  // PASSO 2: Marcar como lido
+  addVisualLog('PASSO 2: Marcando leituraFeita = true', 'info');
   leituraFeita = true;
   qrCodeLido = qr;
+  addVisualLog(`✅ leituraFeita = true, qrCodeLido armazenado`, 'success');
   
-  // UI
-  document.getElementById("frame").classList.add("sucesso");
-  document.getElementById("mensagem").style.display = "block";
-  document.getElementById("status").style.display = "none";
-  _log('✅ UI atualizada');
+  // PASSO 3: Atualizar UI - Borda verde
+  addVisualLog('PASSO 3: Atualizando UI - Borda verde', 'info');
+  try {
+    const frame = document.getElementById("frame");
+    if (frame) {
+      frame.classList.add("sucesso");
+      addVisualLog('✅ Borda verde adicionada', 'success');
+    } else {
+      addVisualLog('⚠️ Elemento "frame" não encontrado', 'warn');
+    }
+  } catch (e) {
+    addVisualLog(`❌ Erro ao adicionar borda: ${e.message}`, 'error');
+  }
   
+  // PASSO 4: Mostrar mensagem de sucesso
+  addVisualLog('PASSO 4: Exibindo mensagem de sucesso', 'info');
+  try {
+    const mensagemDiv = document.getElementById("mensagem");
+    if (mensagemDiv) {
+      mensagemDiv.style.display = "block";
+      addVisualLog('✅ Mensagem de sucesso exibida', 'success');
+      
+      // Esconder mensagem após 1 segundo
+      setTimeout(() => {
+        addVisualLog('Escondendo mensagem após 1 segundo...', 'info');
+        mensagemDiv.style.display = "none";
+      }, 1000);
+    } else {
+      addVisualLog('⚠️ Elemento "mensagem" não encontrado', 'warn');
+    }
+  } catch (e) {
+    addVisualLog(`❌ Erro ao exibir mensagem: ${e.message}`, 'error');
+  }
+  
+  // PASSO 5: Esconder status
+  try {
+    const statusDiv = document.getElementById("status");
+    if (statusDiv) statusDiv.style.display = "none";
+    addVisualLog('✅ Status escondido', 'success');
+  } catch (e) {
+    addVisualLog(`❌ Erro ao esconder status: ${e.message}`, 'error');
+  }
+  
+  // PASSO 6: Preparar payload
+  addVisualLog('PASSO 6: Preparando payload JSON', 'info');
   const payload = {
     tipo: "qr",
     codigo: qr,
     token: token,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    urlCompleta: location.href
   };
+  addVisualLog(`Payload preparado: ${JSON.stringify(payload).substring(0, 100)}...`, 'info');
   
-  _log('Payload a enviar:', JSON.stringify(payload));
-  
+  // PASSO 7: Função de envio
   const enviar = () => {
-    _log('Enviando postMessage...');
-    _log('window.opener existe?', !!window.opener);
-    _log('window.opener.closed?', window.opener?.closed);
+    addVisualLog('=== 📤 FUNÇÃO ENVIAR INICIADA ===', 'success');
+    addVisualLog('PASSO 7.1: Verificando window.opener...', 'info');
+    addVisualLog(`window.opener existe? ${!!window.opener}`, 'info');
+    addVisualLog(`window.opener.closed? ${window.opener?.closed}`, 'info');
     
     try {
       if (window.opener && !window.opener.closed) {
+        addVisualLog(`PASSO 7.2: Enviando postMessage para ${origemWebApp}`, 'info');
         window.opener.postMessage(payload, origemWebApp);
-        _log('✅ postMessage enviado para:', origemWebApp);
+        addVisualLog('✅ postMessage enviado com sucesso!', 'success');
+        addVisualLog(`Payload enviado: ${JSON.stringify(payload)}`, 'info');
       } else {
-        _err('❌ window.opener indisponível ou fechado');
+        addVisualLog('❌ window.opener indisponível ou fechado!', 'error');
       }
     } catch (e) {
-      _err('❌ Erro no postMessage:', e);
+      addVisualLog(`❌ Erro no postMessage: ${e.message}`, 'error');
+      addVisualLog(`Stack: ${e.stack?.substring(0, 200)}`, 'error');
     }
     
-    _log('Aguardando 500ms para fechar...');
+    // PASSO 8: Fechar popup após envio
+    addVisualLog('PASSO 8: Aguardando 500ms para fechar popup...', 'info');
     setTimeout(() => {
-      _log('Chamando window.close()...');
+      addVisualLog('Chamando window.close()...', 'info');
       try {
         window.close();
-        _log('✅ window.close() chamado');
+        addVisualLog('✅ window.close() executado', 'success');
       } catch (e) {
-        _err('❌ Erro no window.close():', e);
+        addVisualLog(`❌ Erro ao fechar janela: ${e.message}`, 'error');
+        addVisualLog('Popup pode precisar ser fechado manualmente', 'warn');
       }
     }, 500);
   };
   
-  _log('Parando câmera...');
-  scanner.stop()
-    .then(() => {
-      _log('✅ Câmera parada, enviando dados...');
-      enviar();
-    })
-    .catch((e) => {
-      _err('⚠️ Erro ao parar câmera:', e);
-      _log('Continuando mesmo assim...');
-      enviar();
-    });
+  // PASSO 9: Parar câmera
+  addVisualLog('PASSO 9: Parando câmera...', 'info');
+  if (scanner && scanner.isScanning) {
+    addVisualLog('Scanner está ativo, chamando stop()...', 'info');
+    scanner.stop()
+      .then(() => {
+        addVisualLog('✅ Câmera parada com sucesso!', 'success');
+        addVisualLog('Chamando função de envio...', 'info');
+        enviar();
+      })
+      .catch((e) => {
+        addVisualLog(`⚠️ Erro ao parar câmera: ${e.message}`, 'warn');
+        addVisualLog('Continuando com envio mesmo assim...', 'warn');
+        enviar();
+      });
+  } else {
+    addVisualLog('Scanner não está ativo, enviando diretamente...', 'warn');
+    enviar();
+  }
+  
+  addVisualLog('=== FIM DA FUNÇÃO SUCESSO ===', 'success');
 }
 
 /* ── FASE 6: INICIAR CÂMERA ── */
 async function iniciarCamera() {
-  _log('=== 📷 INICIANDO CÂMERA ===');
+  addVisualLog('=== 📷 INICIANDO CÂMERA ===', 'success');
   
   try {
     // Verificar API de mídia
-    _log('navigator.mediaDevices:', !!navigator.mediaDevices);
+    addVisualLog(`navigator.mediaDevices: ${!!navigator.mediaDevices}`, 'info');
     if (!navigator.mediaDevices) {
-      throw new Error('navigator.mediaDevices indisponível. Verifique HTTPS e permissões.');
+      throw new Error('navigator.mediaDevices indisponível');
     }
     
     document.getElementById("status").innerText = "📷 Escaneando...";
     document.getElementById("reader").style.display = "block";
-    _log('UI preparada');
+    addVisualLog('UI preparada para escaneamento', 'success');
     
-    _log('Buscando câmeras...');
+    addVisualLog('Buscando câmeras disponíveis...', 'info');
     const cameras = await Html5Qrcode.getCameras();
-    _log(`✅ Encontradas ${cameras.length} câmeras:`);
+    addVisualLog(`✅ Encontradas ${cameras.length} câmeras`, 'success');
+    
     cameras.forEach((cam, i) => {
-      _log(`  ${i+1}: ${cam.label || 'Sem label'} (${cam.id})`);
+      addVisualLog(`  ${i+1}: ${cam.label || 'Sem label'}`, 'info');
     });
     
     if (!cameras || cameras.length === 0) {
@@ -197,37 +314,51 @@ async function iniciarCamera() {
       if (label.includes('back') || label.includes('rear') || 
           label.includes('environment') || label.includes('traseira')) {
         cameraId = cam.id;
-        _log(`✅ Câmera traseira selecionada: ${cam.label}`);
+        addVisualLog(`✅ Câmera traseira selecionada: ${cam.label}`, 'success');
         break;
       }
     }
     
-    _log(`Iniciando scanner com câmera: ${cameraId}`);
+    addVisualLog(`Iniciando scanner com câmera ID: ${cameraId.substring(0, 30)}...`, 'info');
+    addVisualLog('Configuração: fps=10, qrbox=200x200', 'info');
+    
     await scanner.start(
       cameraId,
       { fps: 10, qrbox: { width: 200, height: 200 } },
       sucesso
     );
-    _log('✅ Scanner iniciado, aguardando QR Code...');
+    addVisualLog('✅ Scanner iniciado com sucesso!', 'success');
+    addVisualLog('📷 Aguardando leitura de QR Code...', 'success');
     
   } catch (err) {
-    _err('❌ ERRO AO INICIAR CÂMERA:', err.message);
-    _err('Stack:', err.stack);
+    addVisualLog(`❌ ERRO AO INICIAR CÂMERA: ${err.message}`, 'error');
+    addVisualLog(`Stack: ${err.stack?.substring(0, 200)}`, 'error');
     document.getElementById("status").innerText = `❌ Erro: ${err.message}`;
     
-    _log('Fechando em 3 segundos...');
+    addVisualLog('Fechando em 3 segundos...', 'warn');
     setTimeout(() => {
       try {
         window.close();
       } catch(e) {
-        _err('Não foi possível fechar:', e);
+        addVisualLog('Não foi possível fechar automaticamente', 'warn');
       }
     }, 3000);
   }
 }
 
+// Adicionar listener para mensagens de confirmação do backend
+window.addEventListener('message', (event) => {
+  addVisualLog(`📨 Mensagem recebida de ${event.origin}`, 'info');
+  addVisualLog(`Dados: ${JSON.stringify(event.data).substring(0, 100)}`, 'info');
+  
+  if (event.data && event.data.tipo === 'confirmacao') {
+    addVisualLog('✅ CONFIRMAÇÃO RECEBIDA DO BACKEND!', 'success');
+    addVisualLog(`Conteúdo: ${JSON.stringify(event.data)}`, 'success');
+  }
+});
+
 // Iniciar tudo
-_log('Chamando iniciarCamera()...');
+addVisualLog('Chamando iniciarCamera()...', 'info');
 iniciarCamera();
 </script>
 </body>
