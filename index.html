@@ -1,35 +1,27 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://unpkg.com/html5-qrcode"></script>
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-    
     body {
+      margin: 0;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
       text-align: center;
       background: #000;
       color: #fff;
-      height: 100vh;
-      overflow: hidden;
     }
     
     #status {
+      padding: 15px;
+      font-size: 16px;
+      background: rgba(0,0,0,0.7);
+      margin: 0;
       position: fixed;
       top: 0;
       left: 0;
       right: 0;
-      padding: 15px;
-      font-size: 14px;
-      background: rgba(0,0,0,0.8);
       z-index: 10;
-      text-align: center;
     }
     
     #reader {
@@ -39,76 +31,24 @@
       background: #000;
     }
     
-    #reader video {
-      width: 100% !important;
-      height: 100% !important;
-      object-fit: cover !important;
-    }
-    
-    /* Moldura apenas com os cantos */
     #frame {
-      position: fixed;
+      position: absolute;
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
       width: 250px;
       height: 250px;
+      border: 3px solid #fff;
+      border-radius: 16px;
+      box-shadow: 0 0 20px rgba(255,255,255,0.3);
       pointer-events: none;
+      transition: all 0.3s ease;
       z-index: 20;
     }
     
-    /* Cantos da moldura */
-    #frame::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 40px;
-      height: 40px;
-      border-top: 4px solid #fff;
-      border-left: 4px solid #fff;
-      transition: border-color 0.3s ease;
-    }
-    
-    #frame::after {
-      content: '';
-      position: absolute;
-      top: 0;
-      right: 0;
-      width: 40px;
-      height: 40px;
-      border-top: 4px solid #fff;
-      border-right: 4px solid #fff;
-      transition: border-color 0.3s ease;
-    }
-    
-    #frame .corner-bottom-left {
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      width: 40px;
-      height: 40px;
-      border-bottom: 4px solid #fff;
-      border-left: 4px solid #fff;
-      transition: border-color 0.3s ease;
-    }
-    
-    #frame .corner-bottom-right {
-      position: absolute;
-      bottom: 0;
-      right: 0;
-      width: 40px;
-      height: 40px;
-      border-bottom: 4px solid #fff;
-      border-right: 4px solid #fff;
-      transition: border-color 0.3s ease;
-    }
-    
-    #frame.sucesso::before,
-    #frame.sucesso::after,
-    #frame.sucesso .corner-bottom-left,
-    #frame.sucesso .corner-bottom-right {
+    #frame.sucesso {
       border-color: #00ff88;
+      box-shadow: 0 0 30px #00ff88;
     }
     
     #mensagem {
@@ -119,7 +59,7 @@
       background: rgba(0,0,0,0.95);
       padding: 20px 30px;
       border-radius: 12px;
-      font-size: 20px;
+      font-size: 24px;
       font-weight: bold;
       display: none;
       z-index: 30;
@@ -142,7 +82,6 @@
       transform: translate(-50%, -50%);
       font-size: 14px;
       color: #888;
-      z-index: 15;
     }
   </style>
 </head>
@@ -150,14 +89,13 @@
 
 <div id="status">📷 Iniciando câmera...</div>
 <div id="reader"></div>
-<div id="frame">
-  <div class="corner-bottom-left"></div>
-  <div class="corner-bottom-right"></div>
-</div>
+<div id="frame"></div>
 <div id="mensagem">✓ Leitura confirmada!</div>
-<div class="loading" id="loading">Aguardando permissão...</div>
 
 <script>
+// ============================================
+// QR CODE SCANNER - VERSÃO PRODUÇÃO
+// ============================================
 (function() {
   'use strict';
   
@@ -166,6 +104,14 @@
   let token = null;
   let origemWebApp = '*';
   
+  // Captura erros críticos
+  window.addEventListener('error', (e) => {
+    console.error('[SCANNER] Erro:', e.message);
+  });
+  
+  // ============================================
+  // 1. VALIDAÇÃO INICIAL
+  // ============================================
   const params = new URLSearchParams(window.location.search);
   token = params.get('token');
   const paramOrigem = params.get('origem');
@@ -181,66 +127,66 @@
     throw new Error('window.opener é null');
   }
   
+  // ============================================
+  // 2. INICIALIZAR SCANNER
+  // ============================================
   async function iniciarScanner() {
-    const statusDiv = document.getElementById('status');
-    const loadingDiv = document.getElementById('loading');
-    
     try {
+      // Verificar suporte a câmera
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error('Seu navegador não suporta acesso à câmera');
       }
       
-      statusDiv.innerHTML = '📷 Solicitando permissão...';
-      
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      stream.getTracks().forEach(track => track.stop());
-      
-      statusDiv.innerHTML = '📷 Buscando câmeras...';
-      
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
+      // Obter lista de câmeras
       const cameras = await Html5Qrcode.getCameras();
       
       if (!cameras || cameras.length === 0) {
         throw new Error('Nenhuma câmera encontrada');
       }
       
+      // Selecionar melhor câmera (priorizar traseira)
       let cameraId = cameras[0].id;
-      
       for (const cam of cameras) {
         const label = cam.label.toLowerCase();
-        if (label.includes('environment') || label.includes('back') || label.includes('rear') || label.includes('traseira')) {
+        if (label.includes('back') || label.includes('rear') || 
+            label.includes('environment') || label.includes('traseira')) {
           cameraId = cam.id;
           break;
         }
       }
       
-      if (loadingDiv) loadingDiv.style.display = 'none';
-      
+      // Criar instância do scanner
       scanner = new Html5Qrcode('reader');
       
-      statusDiv.innerHTML = '📷 Iniciando câmera...';
-      
+      // Iniciar escaneamento
       await scanner.start(
         cameraId,
-        { fps: 10, qrbox: { width: 250, height: 250 } },
+        {
+          fps: 10,
+          qrbox: { width: 250, height: 250 }
+        },
         onScanSuccess
       );
       
-      statusDiv.innerHTML = '📷 Aponte para o QR Code';
+      document.getElementById('status').innerHTML = '📷 Aponte para o QR Code';
       
     } catch (err) {
-      console.error('[SCANNER] Erro:', err);
-      statusDiv.innerHTML = `❌ ${err.message}`;
-      if (loadingDiv) loadingDiv.innerHTML = '❌ Erro: ' + err.message;
+      console.error('[SCANNER] Erro ao iniciar:', err);
+      document.getElementById('status').innerHTML = `❌ ${err.message}`;
       setTimeout(() => window.close(), 3000);
     }
   }
   
+  // ============================================
+  // 3. CALLBACK DE SUCESSO
+  // ============================================
   function onScanSuccess(qrCode) {
     if (leituraFeita) return;
     leituraFeita = true;
     
+    console.log('[SCANNER] QR Code lido com sucesso');
+    
+    // Efeitos visuais
     const frame = document.getElementById('frame');
     const mensagem = document.getElementById('mensagem');
     const status = document.getElementById('status');
@@ -249,6 +195,7 @@
     mensagem.style.display = 'block';
     status.style.display = 'none';
     
+    // Preparar payload
     const payload = {
       tipo: 'qr',
       codigo: qrCode,
@@ -256,10 +203,12 @@
       timestamp: new Date().toISOString()
     };
     
+    // Parar câmera
     if (scanner && scanner.isScanning) {
       scanner.stop().catch(e => console.warn('[SCANNER] Erro ao parar:', e));
     }
     
+    // Enviar dados e fechar
     setTimeout(() => {
       try {
         if (window.opener && !window.opener.closed) {
@@ -269,17 +218,15 @@
         console.error('[SCANNER] Erro ao enviar:', e);
       }
       
+      // Fechar janela
       setTimeout(() => window.close(), 300);
     }, 500);
   }
   
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-      setTimeout(iniciarScanner, 100);
-    });
-  } else {
-    setTimeout(iniciarScanner, 100);
-  }
+  // ============================================
+  // 4. INICIAR
+  // ============================================
+  iniciarScanner();
   
 })();
 </script>
