@@ -3,6 +3,7 @@
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://unpkg.com/html5-qrcode"></script>
+
   <style>
     body {
       margin: 0;
@@ -11,7 +12,7 @@
       background: #000;
       color: #fff;
     }
-    
+
     #status {
       padding: 15px;
       font-size: 16px;
@@ -23,14 +24,15 @@
       right: 0;
       z-index: 10;
     }
-    
+
     #reader {
       width: 100%;
       height: 100vh;
       position: relative;
       background: #000;
     }
-    
+
+    /* NOVA MOLDURA (APENAS CANTOS) */
     #frame {
       position: absolute;
       top: 50%;
@@ -38,19 +40,29 @@
       transform: translate(-50%, -50%);
       width: 250px;
       height: 250px;
-      border: 3px solid #fff;
-      border-radius: 16px;
-      box-shadow: 0 0 20px rgba(255,255,255,0.3);
       pointer-events: none;
-      transition: all 0.3s ease;
       z-index: 20;
     }
-    
-    #frame.sucesso {
-      border-color: #00ff88;
-      box-shadow: 0 0 30px #00ff88;
+
+    .corner {
+      position: absolute;
+      width: 40px;
+      height: 40px;
+      border: 4px solid white;
+      box-shadow: 0 0 10px rgba(255,255,255,0.6);
     }
-    
+
+    .corner.tl { top: 0; left: 0; border-right: none; border-bottom: none; }
+    .corner.tr { top: 0; right: 0; border-left: none; border-bottom: none; }
+    .corner.bl { bottom: 0; left: 0; border-right: none; border-top: none; }
+    .corner.br { bottom: 0; right: 0; border-left: none; border-top: none; }
+
+    /* EFEITO SUCESSO */
+    #frame.sucesso .corner {
+      border-color: #00ff88;
+      box-shadow: 0 0 15px #00ff88;
+    }
+
     #mensagem {
       position: fixed;
       top: 50%;
@@ -68,20 +80,11 @@
       white-space: nowrap;
       animation: fadeOut 1s ease forwards;
     }
-    
+
     @keyframes fadeOut {
       0% { opacity: 1; }
       70% { opacity: 1; }
       100% { opacity: 0; visibility: hidden; }
-    }
-    
-    .loading {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      font-size: 14px;
-      color: #888;
     }
   </style>
 </head>
@@ -89,145 +92,121 @@
 
 <div id="status">📷 Iniciando câmera...</div>
 <div id="reader"></div>
-<div id="frame"></div>
+
+<div id="frame">
+  <div class="corner tl"></div>
+  <div class="corner tr"></div>
+  <div class="corner bl"></div>
+  <div class="corner br"></div>
+</div>
+
 <div id="mensagem">✓ Leitura confirmada!</div>
 
 <script>
-// ============================================
-// QR CODE SCANNER - VERSÃO PRODUÇÃO
-// ============================================
 (function() {
   'use strict';
-  
+
   let scanner = null;
   let leituraFeita = false;
   let token = null;
   let origemWebApp = '*';
-  
-  // Captura erros críticos
+
   window.addEventListener('error', (e) => {
     console.error('[SCANNER] Erro:', e.message);
   });
-  
-  // ============================================
-  // 1. VALIDAÇÃO INICIAL
-  // ============================================
+
+  // TOKEN
   const params = new URLSearchParams(window.location.search);
   token = params.get('token');
   const paramOrigem = params.get('origem');
   origemWebApp = paramOrigem ? decodeURIComponent(paramOrigem) : '*';
-  
+
   if (!token) {
-    document.body.innerHTML = '<div style="padding: 20px; color: #ff4444;">❌ Token inválido. Feche esta janela e tente novamente.</div>';
+    document.body.innerHTML = '<div style="padding:20px;color:#ff4444;">❌ Token inválido</div>';
     throw new Error('Token obrigatório');
   }
-  
-  if (!window.opener) {
-    document.body.innerHTML = '<div style="padding: 20px; color: #ff4444;">❌ Esta janela deve ser aberta pelo sistema.</div>';
-    throw new Error('window.opener é null');
-  }
-  
-  // ============================================
-  // 2. INICIALIZAR SCANNER
-  // ============================================
+
+  // INICIAR SCANNER
   async function iniciarScanner() {
     try {
-      // Verificar suporte a câmera
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error('Seu navegador não suporta acesso à câmera');
+        throw new Error('Navegador não suporta câmera');
       }
-      
-      // Obter lista de câmeras
+
       const cameras = await Html5Qrcode.getCameras();
-      
+
       if (!cameras || cameras.length === 0) {
         throw new Error('Nenhuma câmera encontrada');
       }
-      
-      // Selecionar melhor câmera (priorizar traseira)
+
       let cameraId = cameras[0].id;
+
       for (const cam of cameras) {
         const label = cam.label.toLowerCase();
-        if (label.includes('back') || label.includes('rear') || 
+        if (label.includes('back') || label.includes('rear') ||
             label.includes('environment') || label.includes('traseira')) {
           cameraId = cam.id;
           break;
         }
       }
-      
-      // Criar instância do scanner
+
       scanner = new Html5Qrcode('reader');
-      
-      // Iniciar escaneamento
+
+      // 🔥 SEM QRBOX (câmera livre)
       await scanner.start(
         cameraId,
-        {
-          fps: 10,
-          qrbox: { width: 250, height: 250 }
-        },
+        { fps: 10 },
         onScanSuccess
       );
-      
+
       document.getElementById('status').innerHTML = '📷 Aponte para o QR Code';
-      
+
     } catch (err) {
-      console.error('[SCANNER] Erro ao iniciar:', err);
+      console.error('[SCANNER] Erro:', err);
       document.getElementById('status').innerHTML = `❌ ${err.message}`;
       setTimeout(() => window.close(), 3000);
     }
   }
-  
-  // ============================================
-  // 3. CALLBACK DE SUCESSO
-  // ============================================
+
+  // SUCESSO
   function onScanSuccess(qrCode) {
     if (leituraFeita) return;
     leituraFeita = true;
-    
-    console.log('[SCANNER] QR Code lido com sucesso');
-    
-    // Efeitos visuais
+
     const frame = document.getElementById('frame');
     const mensagem = document.getElementById('mensagem');
     const status = document.getElementById('status');
-    
+
     frame.classList.add('sucesso');
     mensagem.style.display = 'block';
     status.style.display = 'none';
-    
-    // Preparar payload
+
     const payload = {
       tipo: 'qr',
       codigo: qrCode,
       token: token,
       timestamp: new Date().toISOString()
     };
-    
-    // Parar câmera
+
     if (scanner && scanner.isScanning) {
-      scanner.stop().catch(e => console.warn('[SCANNER] Erro ao parar:', e));
+      scanner.stop().catch(() => {});
     }
-    
-    // Enviar dados e fechar
+
     setTimeout(() => {
       try {
         if (window.opener && !window.opener.closed) {
           window.opener.postMessage(payload, origemWebApp);
         }
       } catch (e) {
-        console.error('[SCANNER] Erro ao enviar:', e);
+        console.error('[SCANNER] erro envio', e);
       }
-      
-      // Fechar janela
+
       setTimeout(() => window.close(), 300);
     }, 500);
   }
-  
-  // ============================================
-  // 4. INICIAR
-  // ============================================
+
   iniciarScanner();
-  
+
 })();
 </script>
 </body>
