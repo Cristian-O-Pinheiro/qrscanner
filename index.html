@@ -58,61 +58,57 @@
     }
     
     /* Cantos da moldura */
-    #frame::before,
-    #frame::after,
-    #frame .corner-top-left,
-    #frame .corner-top-right,
-    #frame .corner-bottom-left,
-    #frame .corner-bottom-right {
+    #frame::before {
       content: '';
       position: absolute;
+      top: 0;
+      left: 0;
       width: 40px;
       height: 40px;
-      border-color: #fff;
-      border-style: solid;
-      border-width: 0;
+      border-top: 4px solid #fff;
+      border-left: 4px solid #fff;
+      transition: border-color 0.3s ease;
+    }
+    
+    #frame::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 40px;
+      height: 40px;
+      border-top: 4px solid #fff;
+      border-right: 4px solid #fff;
+      transition: border-color 0.3s ease;
+    }
+    
+    #frame .corner-bottom-left {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 40px;
+      height: 40px;
+      border-bottom: 4px solid #fff;
+      border-left: 4px solid #fff;
+      transition: border-color 0.3s ease;
+    }
+    
+    #frame .corner-bottom-right {
+      position: absolute;
+      bottom: 0;
+      right: 0;
+      width: 40px;
+      height: 40px;
+      border-bottom: 4px solid #fff;
+      border-right: 4px solid #fff;
       transition: border-color 0.3s ease;
     }
     
     #frame.sucesso::before,
     #frame.sucesso::after,
-    #frame.sucesso .corner-top-left,
-    #frame.sucesso .corner-top-right,
     #frame.sucesso .corner-bottom-left,
     #frame.sucesso .corner-bottom-right {
       border-color: #00ff88;
-    }
-    
-    /* Canto superior esquerdo */
-    #frame::before {
-      top: 0;
-      left: 0;
-      border-top-width: 4px;
-      border-left-width: 4px;
-    }
-    
-    /* Canto superior direito */
-    #frame::after {
-      top: 0;
-      right: 0;
-      border-top-width: 4px;
-      border-right-width: 4px;
-    }
-    
-    /* Canto inferior esquerdo */
-    #frame .corner-bottom-left {
-      bottom: 0;
-      left: 0;
-      border-bottom-width: 4px;
-      border-left-width: 4px;
-    }
-    
-    /* Canto inferior direito */
-    #frame .corner-bottom-right {
-      bottom: 0;
-      right: 0;
-      border-bottom-width: 4px;
-      border-right-width: 4px;
     }
     
     #mensagem {
@@ -170,9 +166,6 @@
   let token = null;
   let origemWebApp = '*';
   
-  // ============================================
-  // 1. VALIDAÇÃO INICIAL
-  // ============================================
   const params = new URLSearchParams(window.location.search);
   token = params.get('token');
   const paramOrigem = params.get('origem');
@@ -188,13 +181,9 @@
     throw new Error('window.opener é null');
   }
   
-  // ============================================
-  // 2. FUNÇÃO PARA INICIAR SCANNER
-  // ============================================
   async function iniciarScanner() {
     const statusDiv = document.getElementById('status');
     const loadingDiv = document.getElementById('loading');
-    const readerDiv = document.getElementById('reader');
     
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -216,51 +205,29 @@
         throw new Error('Nenhuma câmera encontrada');
       }
       
-      let cameraId = null;
+      let cameraId = cameras[0].id;
       
       for (const cam of cameras) {
         const label = cam.label.toLowerCase();
-        if (label.includes('environment') || 
-            label.includes('back') || 
-            label.includes('rear') || 
-            label.includes('traseira')) {
+        if (label.includes('environment') || label.includes('back') || label.includes('rear') || label.includes('traseira')) {
           cameraId = cam.id;
-          statusDiv.innerHTML = '📷 Usando câmera traseira';
           break;
         }
       }
       
-      if (!cameraId && cameras.length > 0) {
-        cameraId = cameras[0].id;
-        statusDiv.innerHTML = '📷 Usando câmera padrão';
-      }
-      
-      if (!cameraId) {
-        throw new Error('Não foi possível selecionar uma câmera');
-      }
-      
       if (loadingDiv) loadingDiv.style.display = 'none';
-      readerDiv.style.display = 'block';
       
       scanner = new Html5Qrcode('reader');
       
-      statusDiv.innerHTML = '📷 Iniciando...';
+      statusDiv.innerHTML = '📷 Iniciando câmera...';
       
-      try {
-        await scanner.start(
-          { facingMode: "environment" },
-          { fps: 10, qrbox: { width: 250, height: 250 } },
-          onScanSuccess
-        );
-        statusDiv.innerHTML = '📷 Aponte para o QR Code';
-      } catch (err) {
-        await scanner.start(
-          cameraId,
-          { fps: 10, qrbox: { width: 250, height: 250 } },
-          onScanSuccess
-        );
-        statusDiv.innerHTML = '📷 Aponte para o QR Code';
-      }
+      await scanner.start(
+        cameraId,
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        onScanSuccess
+      );
+      
+      statusDiv.innerHTML = '📷 Aponte para o QR Code';
       
     } catch (err) {
       console.error('[SCANNER] Erro:', err);
@@ -270,9 +237,6 @@
     }
   }
   
-  // ============================================
-  // 3. CALLBACK DE SUCESSO
-  // ============================================
   function onScanSuccess(qrCode) {
     if (leituraFeita) return;
     leituraFeita = true;
@@ -309,9 +273,6 @@
     }, 500);
   }
   
-  // ============================================
-  // 4. INICIAR
-  // ============================================
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
       setTimeout(iniciarScanner, 100);
