@@ -3,12 +3,6 @@
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <!-- QR-SCANNER -->
-  <script type="module">
-    import QrScanner from "https://unpkg.com/qr-scanner@1.4.2/qr-scanner.min.js";
-    window.QrScanner = QrScanner;
-  </script>
-
   <style>
     body {
       margin: 0;
@@ -99,7 +93,7 @@
 <div id="status">📷 Iniciando câmera...</div>
 
 <div id="reader">
-  <video id="video"></video>
+  <video id="video" playsinline></video>
 
   <div id="frame">
     <div class="corner tl"></div>
@@ -111,7 +105,10 @@
 
 <div id="mensagem">✓ Leitura confirmada!</div>
 
-<script>
+<!-- SCRIPT ÚNICO E CORRETO -->
+<script type="module">
+import QrScanner from "https://unpkg.com/qr-scanner@1.4.2/qr-scanner.min.js";
+
 (async function() {
   'use strict';
 
@@ -133,14 +130,15 @@
 
   try {
 
-    // CRIA SCANNER
+    // 🔥 CRIA SCANNER
     scanner = new QrScanner(
       video,
       result => onScanSuccess(result.data),
       {
-        preferredCamera: 'environment', // traseira
+        preferredCamera: 'environment',
         highlightScanRegion: false,
-        highlightCodeOutline: false
+        highlightCodeOutline: false,
+        returnDetailedScanResult: true
       }
     );
 
@@ -150,7 +148,14 @@
 
   } catch (err) {
     console.error('[SCANNER] Erro:', err);
-    status.innerHTML = `❌ ${err.message}`;
+
+    // Mensagem amigável
+    if (err.message.includes('Permission')) {
+      status.innerHTML = '❌ Permissão da câmera negada';
+    } else {
+      status.innerHTML = `❌ ${err.message}`;
+    }
+
     setTimeout(() => window.close(), 3000);
   }
 
